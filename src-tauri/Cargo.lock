@@ -3114,9 +3114,13 @@ dependencies = [
 name = "pulse"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "chrono",
  "keyring",
  "log",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "reqwest 0.12.28",
  "rusqlite",
  "security-framework 3.7.0",
@@ -3135,6 +3139,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "url",
+ "windows-sys 0.59.0",
  "wiremock",
 ]
 

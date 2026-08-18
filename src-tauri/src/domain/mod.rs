@@ -22,5 +22,5 @@ pub use service::{
 };
 pub use settings::{
     AppSettings, QuietHours, Theme, DEFAULT_FAIL_THRESHOLD, DEFAULT_INTERVAL_SEC,
-    DEFAULT_TIMEOUT_MS,
+    DEFAULT_TIMEOUT_MS, MIXED_REACHABILITY_HELP,
 };

@@ -66,6 +66,14 @@ impl QuietQueue {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+
+    /// Flush queued downs after a quiet window ends. No-op until PR 15.
+    pub fn flush(&mut self) {}
+}
+
+/// Flush entry point. Called on OS wake if the quiet window has ended.
+pub fn flush_quiet_queue(queue: &mut QuietQueue) {
+    queue.flush();
 }
 
 pub fn in_quiet_hours<Tz: TimeZone>(hours: &QuietHours, now: DateTime<Tz>) -> bool {
@@ -203,6 +211,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["worker"]
         );
+    }
+
+    #[test]
+    fn flush_is_noop_until_pr15() {
+        let mut queue = QuietQueue::new();
+        queue.apply(QueueOp::Enqueue, entry("payments"));
+        flush_quiet_queue(&mut queue);
+        assert!(queue.contains("payments"));
+        assert_eq!(queue.len(), 1);
     }
 
     #[test]

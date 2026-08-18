@@ -6,6 +6,7 @@ pub mod eval;
 pub mod logging;
 >>>>>>> 6bae09b (Scheduler, stagger, pause + logging + watchdog)
 pub mod notify;
+pub mod platform;
 pub mod poller;
 pub mod store;
 
@@ -67,6 +68,14 @@ pub fn run() {
                 on_poller_dead: Arc::new(|_| {}),
             })?;
             let handle = scheduler.handle();
+            let wake = crate::platform::wake::listen({
+                let handle = handle.clone();
+                move |event| match event {
+                    crate::platform::PowerEvent::Sleep => handle.on_os_sleep(),
+                    crate::platform::PowerEvent::Wake => handle.on_os_wake(),
+                }
+            });
+            app.manage(wake);
             tauri::async_runtime::spawn(async move {
                 scheduler.run().await;
             });

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -10,14 +10,19 @@ use tokio::task::{AbortHandle, JoinHandle};
 use tokio::time::sleep;
 
 use crate::domain::view::{assemble_view, compact_sample};
+use crate::domain::MachineStatus;
 use crate::domain::{
     AppSettings, CheckEvidence, CheckResult, ErrorKind, MessageArgs, OutcomeClass, RuntimeState,
     Service, ServiceStatus, ServiceView,
 };
 use crate::eval::{evaluate_at, outcome_of};
 use crate::notify::{
-    in_quiet_hours, DownGrouper, Emit, Notification, Notifier, NotifyPolicy, QueueOp, QueuedDown,
-    QuietQueue,
+    flush_quiet_queue, in_quiet_hours, DownGrouper, Emit, Notification, Notifier, NotifyPolicy,
+    QueueOp, QueuedDown, QuietQueue,
+};
+use crate::poller::offline::{
+    host_of, in_wake_grace, is_overdue, is_transport_error, OfflineDetector, OfflineTransition,
+    RESUME_SETTLE,
 };
 use crate::poller::state_machine::{fail_threshold, on_result, ProbeEvent};
 use crate::poller::HttpClient;
@@ -34,6 +39,7 @@ pub const WATCHDOG_RESET: Duration = Duration::from_secs(60);
 pub trait PulseEvents: Send + Sync {
     fn emit_services(&self, views: &[ServiceView]);
     fn emit_poller_dead(&self, at: DateTime<Utc>);
+    fn emit_offline(&self, _offline: bool) {}
 }
 
 pub struct NoopEvents;
@@ -72,6 +78,15 @@ impl<R: tauri::Runtime> PulseEvents for TauriEvents<R> {
             at: DateTime<Utc>,
         }
         let _ = self.0.emit("pulse://poller-dead", Dead { at });
+    }
+
+    fn emit_offline(&self, offline: bool) {
+        use tauri::Emitter;
+        #[derive(Clone, serde::Serialize)]
+        struct Offline {
+            offline: bool,
+        }
+        let _ = self.0.emit("pulse://offline", Offline { offline });
     }
 }
 
@@ -159,6 +174,9 @@ struct Inner {
     helpers: Mutex<Vec<AbortHandle>>,
     child_panic: Notify,
     child_panic_gen: AtomicU64,
+    offline: Mutex<OfflineDetector>,
+    wake_at_ms: AtomicI64,
+    wake_gen: AtomicU64,
 }
 
 pub struct Scheduler {
@@ -207,6 +225,9 @@ impl Scheduler {
                 helpers: Mutex::new(Vec::new()),
                 child_panic: Notify::new(),
                 child_panic_gen: AtomicU64::new(0),
+                offline: Mutex::new(OfflineDetector::new()),
+                wake_at_ms: AtomicI64::new(0),
+                wake_gen: AtomicU64::new(0),
             }),
         })
     }
@@ -347,12 +368,131 @@ impl SchedulerHandle {
     pub fn shutdown(&self) {
         self.inner.shutdown();
     }
+
+    pub fn is_offline(&self) -> bool {
+        self.inner
+            .offline
+            .lock()
+            .expect("offline lock")
+            .is_offline()
+    }
+
+    pub fn on_os_sleep(&self) {
+        self.inner.on_sleep(Utc::now());
+    }
+
+    pub fn on_os_wake(&self) {
+        let inner = Arc::clone(&self.inner);
+        tauri::async_runtime::spawn(async move {
+            inner.on_wake().await;
+        });
+    }
+
+    pub async fn resume_from_wake(&self) {
+        self.inner.on_wake().await;
+    }
 }
 
 impl Inner {
     fn wake(&self, id: &str) {
         if let Some(slot) = self.slots.lock().expect("slots lock").get(id) {
             slot.check_now.notify_one();
+        }
+    }
+
+    fn all_ids(&self) -> Vec<String> {
+        self.slots
+            .lock()
+            .expect("slots lock")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    fn note_wake(&self, now: DateTime<Utc>) {
+        self.wake_at_ms
+            .store(now.timestamp_millis(), Ordering::SeqCst);
+    }
+
+    fn in_wake_grace(&self, now: DateTime<Utc>) -> bool {
+        let ms = self.wake_at_ms.load(Ordering::SeqCst);
+        if ms <= 0 {
+            return false;
+        }
+        DateTime::from_timestamp_millis(ms).is_some_and(|wake| in_wake_grace(now, wake))
+    }
+
+    fn on_sleep(&self, now: DateTime<Utc>) {
+        let ids = self.all_ids();
+        let history = self.history.lock().expect("history lock");
+        for id in ids {
+            let _ = history.apply_sleep(&id, now);
+        }
+    }
+
+    fn apply_wakes(&self, now: DateTime<Utc>) {
+        let ids = self.all_ids();
+        let history = self.history.lock().expect("history lock");
+        for id in ids {
+            let _ = history.apply_wake(&id, now);
+        }
+    }
+
+    fn maybe_flush_quiet(&self, now: DateTime<Utc>) {
+        let settings = self.settings.read().expect("settings lock").clone();
+        let in_quiet = settings
+            .quiet_hours
+            .as_ref()
+            .is_some_and(|hours| in_quiet_hours(hours, now));
+        if !in_quiet {
+            flush_quiet_queue(&mut self.quiet.lock().expect("quiet lock"));
+        }
+    }
+
+    fn apply_offline_clock(&self, entered_at: DateTime<Utc>, now: DateTime<Utc>) {
+        let ids = self.all_ids();
+        let paused: std::collections::HashSet<String> = self
+            .slots
+            .lock()
+            .expect("slots lock")
+            .values()
+            .filter(|slot| slot.service.paused)
+            .map(|slot| slot.service.id.clone())
+            .collect();
+        let history = self.history.lock().expect("history lock");
+        for id in ids {
+            if paused.contains(&id) {
+                continue;
+            }
+            let Ok(mut runtime) = history.load_runtime(&id) else {
+                continue;
+            };
+            if runtime.status != MachineStatus::Down || runtime.paused_at.is_some() {
+                continue;
+            }
+            let elapsed = (now - entered_at).num_milliseconds().max(0) as u64;
+            runtime.down_clock_adjust_ms = runtime.down_clock_adjust_ms.saturating_add(elapsed);
+            let _ = history.put_runtime(&id, &runtime);
+        }
+    }
+
+    async fn on_wake(self: &Arc<Self>) {
+        let gen = self.wake_gen.fetch_add(1, Ordering::SeqCst) + 1;
+        let now = Utc::now();
+        self.note_wake(now);
+        self.apply_wakes(now);
+        // In-flight HTTP dies with the task; canceled is a state-machine no-op.
+        self.abort_all();
+        tokio::select! {
+            _ = sleep(RESUME_SETTLE) => {}
+            _ = self.cancelled() => return,
+        }
+        if self.wake_gen.load(Ordering::SeqCst) != gen {
+            return;
+        }
+        self.maybe_flush_quiet(Utc::now());
+        if !self.stopped.load(Ordering::SeqCst) {
+            self.spawn_all();
         }
     }
 
@@ -692,10 +832,21 @@ impl Inner {
             } else {
                 interval
             };
-            tokio::select! {
-                _ = sleep(wait) => {}
-                _ = check_now.notified() => {}
+            let next_due = Utc::now() + chrono::Duration::seconds(i64::from(service.interval_sec));
+            let elapsed = tokio::select! {
+                _ = sleep(wait) => true,
+                _ = check_now.notified() => false,
                 _ = self.cancelled() => return,
+            };
+            if is_overdue(Utc::now(), next_due, interval) {
+                self.note_wake(Utc::now());
+                if elapsed {
+                    tokio::select! {
+                        _ = sleep(RESUME_SETTLE) => {}
+                        _ = check_now.notified() => {}
+                        _ = self.cancelled() => return,
+                    }
+                }
             }
         }
     }
@@ -751,14 +902,48 @@ impl Inner {
             .clone_service(&service.id)
             .map(|current| current.paused)
             .unwrap_or(service.paused);
-        // Offline detector is PR 9 — pass false; History still skips canceled/offline.
+        let reached = matches!(evidence.outcome, OutcomeClass::Ok | OutcomeClass::Soft);
+        let unpaused = self.unpaused_ids().len();
+        let offline_change = {
+            let mut detector = self.offline.lock().expect("offline lock");
+            detector.observe(
+                host_of(&service.url).as_deref(),
+                evidence.error_kind,
+                reached,
+                unpaused,
+                now,
+            )
+        };
+        match offline_change {
+            OfflineTransition::Entered => {
+                tracing::info!(event = "offline", offline = true, "offline");
+                self.events.emit_offline(true);
+            }
+            OfflineTransition::Exited { entered_at } => {
+                self.apply_offline_clock(entered_at, now);
+                tracing::info!(event = "offline", offline = false, "offline");
+                self.events.emit_offline(false);
+            }
+            OfflineTransition::None => {}
+        }
+        let offline = self.offline.lock().expect("offline lock").is_offline();
+        let grace_transport = self.in_wake_grace(now)
+            && !reached
+            && evidence.error_kind.is_some_and(is_transport_error);
+        let event = if offline {
+            ProbeEvent::Offline
+        } else if grace_transport {
+            ProbeEvent::Canceled
+        } else {
+            ProbeEvent::Applied(outcome_of(&evidence))
+        };
         let transition = on_result(
             &mut runtime,
-            ProbeEvent::Applied(outcome_of(&evidence)),
+            event,
             now,
             threshold,
             paused,
-            false,
+            offline,
             &policy,
         );
 
@@ -771,7 +956,7 @@ impl Inner {
             state,
         };
 
-        if transition.applied {
+        if transition.applied && !offline {
             let sample = compact_sample(&result);
             let history = self.history.lock().expect("history lock");
             history.put_runtime(&service.id, &runtime)?;
@@ -795,7 +980,11 @@ impl Inner {
         }
 
         self.checks.fetch_add(1, Ordering::Relaxed);
-        log_check(service, &evidence, service.interval_sec);
+        if offline {
+            log_offline(service, service.interval_sec);
+        } else {
+            log_check(service, &evidence, service.interval_sec);
+        }
         self.mark_dirty();
         Ok(result)
     }
@@ -905,6 +1094,19 @@ fn missing_secret_evidence(missing: &MissingSecret, at: DateTime<Utc>) -> CheckE
         })),
         body_preview: None,
     }
+}
+
+fn log_offline(service: &Service, next_sec: u32) {
+    tracing::info!(
+        id = %service.id,
+        name = %service.name,
+        outcome = "offline",
+        kind = "offline",
+        http = 0,
+        latency_ms = 0,
+        next = next_sec,
+        "check"
+    );
 }
 
 fn log_check(service: &Service, evidence: &CheckEvidence, next_sec: u32) {
@@ -1475,5 +1677,257 @@ mod tests {
 
         handle.shutdown();
         let _ = task.await;
+    }
+
+    struct OfflineCap {
+        services: tokio::sync::mpsc::UnboundedSender<Vec<ServiceView>>,
+        dead: tokio::sync::mpsc::UnboundedSender<DateTime<Utc>>,
+        offline: tokio::sync::mpsc::UnboundedSender<bool>,
+    }
+
+    impl PulseEvents for OfflineCap {
+        fn emit_services(&self, views: &[ServiceView]) {
+            let _ = self.services.send(views.to_vec());
+        }
+        fn emit_poller_dead(&self, at: DateTime<Utc>) {
+            let _ = self.dead.send(at);
+        }
+        fn emit_offline(&self, offline: bool) {
+            let _ = self.offline.send(offline);
+        }
+    }
+
+    #[tokio::test]
+    async fn two_dns_hosts_freeze_without_samples() {
+        let (_dir, history) = open_history();
+        let a = sample("aaa", "http://aaa.invalid/health".into(), 15);
+        let b = sample("bbb", "http://bbb.invalid/health".into(), 15);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (off_tx, mut off_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = {
+            let scheduler = Scheduler::new(SchedulerConfig {
+                services: vec![a, b],
+                settings: AppSettings::default(),
+                history,
+                secrets: Arc::new(SecretStore::for_test()),
+                events: Arc::new(OfflineCap {
+                    services: tx,
+                    dead: dead_tx,
+                    offline: off_tx,
+                }),
+                notifier: Box::new(NoopNotifier),
+                enable_jitter: false,
+                on_poller_dead: Arc::new(|_| {}),
+            })
+            .unwrap();
+            let handle = scheduler.handle();
+            (handle.clone(), tokio::spawn(scheduler.run()))
+        };
+
+        let entered = tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                if off_rx.recv().await == Some(true) {
+                    return;
+                }
+            }
+        })
+        .await;
+        assert!(entered.is_ok(), "expected offline enter");
+        assert!(handle.is_offline());
+
+        handle.with_history(|history| {
+            let a_samples = history.samples_24h("aaa", Utc::now()).unwrap().len();
+            let b_samples = history.samples_24h("bbb", Utc::now()).unwrap().len();
+            // The first host fail applies; the second enters offline and is frozen.
+            assert!(
+                a_samples + b_samples <= 1,
+                "offline-frozen probes are not sampled"
+            );
+        });
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        handle.with_history(|history| {
+            let total = history.samples_24h("aaa", Utc::now()).unwrap().len()
+                + history.samples_24h("bbb", Utc::now()).unwrap().len();
+            assert!(total <= 1);
+            let a_fails = history.load_runtime("aaa").unwrap().consecutive_hard_fails;
+            let b_fails = history.load_runtime("bbb").unwrap().consecutive_hard_fails;
+            assert!(a_fails + b_fails <= 1, "fail counters freeze while offline");
+        });
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn any_success_exits_offline() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let (_dir, history) = open_history();
+        let a = sample("aaa", "http://aaa.invalid/health".into(), 15);
+        let b = sample("bbb", "http://bbb.invalid/health".into(), 15);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (off_tx, mut off_rx) = tokio::sync::mpsc::unbounded_channel();
+        let scheduler = Scheduler::new(SchedulerConfig {
+            services: vec![a, b],
+            settings: AppSettings::default(),
+            history,
+            secrets: Arc::new(SecretStore::for_test()),
+            events: Arc::new(OfflineCap {
+                services: tx,
+                dead: dead_tx,
+                offline: off_tx,
+            }),
+            notifier: Box::new(NoopNotifier),
+            enable_jitter: false,
+            on_poller_dead: Arc::new(|_| {}),
+        })
+        .unwrap();
+        let handle = scheduler.handle();
+        let task = tokio::spawn(scheduler.run());
+
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                if off_rx.recv().await == Some(true) {
+                    return;
+                }
+            }
+        })
+        .await
+        .expect("enter offline");
+
+        let mut up = sample("ccc", format!("{}/ok", server.uri()), 15);
+        up.fail_threshold = Some(1);
+        handle.upsert(up);
+        let result = handle.check_now("ccc").await.unwrap();
+        assert_eq!(result.evidence.http_status, Some(200));
+        assert!(!handle.is_offline());
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn single_host_timeout_is_a_normal_hard_fail() {
+        let (_dir, history) = open_history();
+        let mut svc = sample("only", "http://only.invalid/health".into(), 15);
+        svc.fail_threshold = Some(1);
+        svc.timeout_ms = 500;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = start(
+            vec![svc],
+            history,
+            Arc::new(SecretStore::for_test()),
+            Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+        );
+
+        wait_state(&handle, "only", UiState::Down).await;
+        assert!(!handle.is_offline());
+        handle.with_history(|history| {
+            assert_eq!(history.samples_24h("only", Utc::now()).unwrap().len(), 1);
+            assert_eq!(
+                history.load_runtime("only").unwrap().consecutive_hard_fails,
+                1
+            );
+        });
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn sleep_wake_persists_slept_at_and_settles() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let (_dir, history) = open_history();
+        let mut svc = sample("down", format!("{}/health", server.uri()), 60);
+        svc.fail_threshold = Some(1);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = start(
+            vec![svc],
+            history,
+            Arc::new(SecretStore::for_test()),
+            Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+        );
+
+        wait_state(&handle, "down", UiState::Down).await;
+        handle.on_os_sleep();
+        handle.with_history(|history| {
+            assert!(history.load_runtime("down").unwrap().slept_at.is_some());
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let resume = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.resume_from_wake().await })
+        };
+        tokio::time::sleep(Duration::from_millis(2_200)).await;
+        resume.await.unwrap();
+        handle.with_history(|history| {
+            let state = history.load_runtime("down").unwrap();
+            assert!(state.slept_at.is_none());
+            assert!(state.down_clock_adjust_ms > 0);
+        });
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn wake_grace_skips_transport_fail_counters() {
+        let (_dir, history) = open_history();
+        let mut svc = sample("g", "http://grace.invalid/health".into(), 60);
+        svc.fail_threshold = Some(1);
+        svc.timeout_ms = 400;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let scheduler = Scheduler::new(SchedulerConfig {
+            services: vec![svc],
+            settings: AppSettings::default(),
+            history,
+            secrets: Arc::new(SecretStore::for_test()),
+            events: Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+            notifier: Box::new(NoopNotifier),
+            enable_jitter: false,
+            on_poller_dead: Arc::new(|_| {}),
+        })
+        .unwrap();
+        let handle = scheduler.handle();
+        handle.on_os_sleep();
+        let resume = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.resume_from_wake().await })
+        };
+        tokio::time::sleep(Duration::from_millis(2_200)).await;
+        resume.await.unwrap();
+
+        let result = handle.check_now("g").await.unwrap();
+        assert_eq!(result.evidence.error_kind, Some(ErrorKind::Dns));
+        handle.with_history(|history| {
+            assert_eq!(history.load_runtime("g").unwrap().consecutive_hard_fails, 0);
+            assert!(history.samples_24h("g", Utc::now()).unwrap().is_empty());
+        });
+        handle.shutdown();
     }
 }

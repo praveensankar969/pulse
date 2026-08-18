@@ -59,6 +59,25 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Same major as keyring 3.6's macOS crate so PlatformFailure downcast works.
 security-framework = "3"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3.2", features = [
+    "NSNotification",
+    "NSOperation",
+    "NSString",
+    "block2",
+] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "NSWorkspace",
+    "block2",
+] }
+block2 = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
