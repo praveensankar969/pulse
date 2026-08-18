@@ -9,4 +9,5 @@
     "core:window:allow-destroy",
     "allow-settings"
   ]
+  "permissions": ["core:default", "allow-settings"]
 }

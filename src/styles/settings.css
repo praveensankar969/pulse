@@ -38,6 +38,11 @@
 
 .settings-nav button:focus-visible {
   outline: 2px solid var(--accent);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-1);
+  color: var(--text-0);
 }
 
 .settings-panes {
@@ -63,6 +68,7 @@
 .field input,
 .field select,
 .field textarea {
+.field select {
   background: var(--bg-0);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -73,6 +79,7 @@
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
+.field select:focus {
   outline: 2px solid var(--accent);
   outline-offset: 0;
   border-color: transparent;
@@ -217,4 +224,6 @@ hr {
 .launch-prompt-actions {
   display: flex;
   gap: 8px;
+.day-pills button:focus-visible {
+  outline: 2px solid var(--accent);
 }

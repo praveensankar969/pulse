@@ -6,7 +6,7 @@
 //! Windows body-click is `NotificationResponse::Default` (not `"__closed"`).
 //! `RunEvent::Reopen` is only a Dock-relaunch fallback; this app is an
 //! accessory / LSUIElement and has no Dock icon, so banner click does not go
-//! through Reopen. No quiet-hours flush.
+//! through Reopen. Quiet-hours flush lives in `notify/quiet.rs` + the scheduler.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

@@ -93,6 +93,7 @@ pub fn run() {
             app.manage(AppState::new(store, secrets, handle));
             crate::platform::tray::install(app.handle(), tray)?;
             crate::platform::detail::install(app.handle());
+            crate::platform::settings::install(app.handle());
             // Installed Windows toast may relaunch with `pulse:focus?id=`.
             let args: Vec<String> = std::env::args().collect();
             if crate::notify::parse_focus_args(&args).is_some() {
@@ -121,6 +122,9 @@ pub fn run() {
             ipc::commands::quit,
             ipc::commands::open_action,
             ipc::commands::get_detail,
+            ipc::commands::get_settings,
+            ipc::commands::update_settings,
+            ipc::commands::open_settings,
             ipc::commands::snooze,
             ipc::commands::open_action,
             ipc::commands::open_detail,

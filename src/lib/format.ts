@@ -5,6 +5,7 @@ import type {
   CompactSample,
   ErrorKind,
   ExpectedStatus,
+  QuietHours,
   ServiceStatus,
   ServiceView,
 } from "./types";
@@ -238,6 +239,60 @@ export function tomorrowEightLocal(now = new Date()): string {
   next.setDate(next.getDate() + 1);
   next.setHours(8, 0, 0, 0);
   return next.toISOString();
+}
+
+export const DEFAULT_QUIET_HOURS: QuietHours = {
+  start: "22:00",
+  end: "08:00",
+  days: [1, 2, 3, 4, 5],
+};
+
+export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+function parseHhmm(value: string): [number, number] | null {
+  if (!/^\d{2}:\d{2}$/.test(value)) return null;
+  const hour = Number(value.slice(0, 2));
+  const minute = Number(value.slice(3, 5));
+  if (hour > 23 || minute > 59) return null;
+  return [hour, minute];
+}
+
+/** `days` names the day the window starts. Overnight continues into D+1. */
+export function inQuietWindow(hours: QuietHours, local: Date): boolean {
+  const start = parseHhmm(hours.start);
+  const end = parseHhmm(hours.end);
+  if (!start || !end || hours.days.length === 0) return false;
+  const weekday = local.getDay();
+  const yesterday = (weekday + 6) % 7;
+  const minutes = local.getHours() * 60 + local.getMinutes();
+  const startMin = start[0] * 60 + start[1];
+  const endMin = end[0] * 60 + end[1];
+  const selected = (day: number) => hours.days.includes(day);
+  if (startMin < endMin) {
+    return selected(weekday) && minutes >= startMin && minutes < endMin;
+  }
+  return (
+    (selected(weekday) && minutes >= startMin) ||
+    (selected(yesterday) && minutes < endMin)
+  );
+}
+
+/** Friday 22:00 → Saturday 08:00 even if Saturday is unchecked. */
+export function overnightFridaySaturdayHolds(hours: QuietHours): boolean {
+  const cases: Array<[number, number, number, number, number, boolean]> = [
+    [2026, 7, 21, 21, 59, false],
+    [2026, 7, 21, 22, 0, true],
+    [2026, 7, 21, 23, 30, true],
+    [2026, 7, 22, 0, 0, true],
+    [2026, 7, 22, 7, 59, true],
+    [2026, 7, 22, 8, 0, false],
+    [2026, 7, 22, 22, 0, false],
+    [2026, 7, 23, 7, 59, false],
+  ];
+  return cases.every(([year, month, day, hour, minute, want]) => {
+    const local = new Date(year, month, day, hour, minute, 0, 0);
+    return inQuietWindow(hours, local) === want;
+  });
 }
 
 export function formatExpectedStatus(status: ExpectedStatus): string {

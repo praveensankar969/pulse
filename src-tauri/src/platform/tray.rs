@@ -366,7 +366,7 @@ fn handle_menu<R: tauri::Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
                 }
             });
         }
-        "settings" => open_settings(app),
+        "settings" => crate::platform::settings::open_settings(app),
         "quit" => app.exit(0),
         _ => {}
     }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -17,8 +17,8 @@ use crate::domain::{
 };
 use crate::eval::{evaluate_at, outcome_of};
 use crate::notify::{
-    flush_quiet_queue, in_quiet_hours, DownGrouper, Emit, Notification, Notifier, NotifyPolicy,
-    QueueOp, QueuedDown, QuietQueue,
+    down_body, down_title, flush_quiet_queue, in_quiet_hours, DownGrouper, Emit, Notification,
+    Notifier, NotifyPolicy, QueueOp, QueuedDown, QuietQueue,
 };
 use crate::poller::offline::{
     host_of, in_wake_grace, is_overdue, is_transport_error, offline_adjust_ms, OfflineDetector,
@@ -285,6 +285,7 @@ impl SchedulerHandle {
 
     pub fn update_settings(&self, settings: AppSettings) {
         *self.inner.settings.write().expect("settings lock") = settings;
+        self.inner.maybe_flush_quiet(Utc::now());
     }
 
     pub fn upsert(&self, service: Service) {
@@ -295,6 +296,7 @@ impl SchedulerHandle {
     pub fn remove(&self, id: &str) {
         self.inner.abort_one(id);
         self.inner.slots.lock().expect("slots lock").remove(id);
+        self.inner.quiet.lock().expect("quiet lock").recover(id);
         self.inner.mark_dirty();
     }
 
@@ -453,13 +455,47 @@ impl Inner {
     }
 
     fn maybe_flush_quiet(&self, now: DateTime<Utc>) {
-        let settings = self.settings.read().expect("settings lock").clone();
-        let in_quiet = settings
+        let in_quiet = self
+            .settings
+            .read()
+            .expect("settings lock")
             .quiet_hours
             .as_ref()
             .is_some_and(|hours| in_quiet_hours(hours, now));
-        if !in_quiet {
-            flush_quiet_queue(&mut self.quiet.lock().expect("quiet lock"));
+        if in_quiet {
+            return;
+        }
+        let ids: Vec<String> = self
+            .quiet
+            .lock()
+            .expect("quiet lock")
+            .members()
+            .iter()
+            .map(|entry| entry.service_id.clone())
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let drop: HashSet<String> = {
+            let history = self.history.lock().expect("history lock");
+            ids.into_iter()
+                .filter(|id| match history.load_runtime(id) {
+                    Ok(runtime) => runtime.status != MachineStatus::Down || runtime.is_snoozed(now),
+                    Err(_) => true,
+                })
+                .collect()
+        };
+        let events = {
+            let mut queue = self.quiet.lock().expect("quiet lock");
+            queue.retain(|entry| !drop.contains(&entry.service_id));
+            flush_quiet_queue(&mut queue)
+        };
+        if events.is_empty() {
+            return;
+        }
+        let mut notifier = self.notifier.lock().expect("notifier lock");
+        for item in events {
+            notifier.notify(item);
         }
     }
 
@@ -781,6 +817,9 @@ impl Inner {
             .lock()
             .expect("history lock")
             .set_snooze(id, until)?;
+        if until.is_some() {
+            self.quiet.lock().expect("quiet lock").recover(id);
+        }
         Ok(())
     }
 
@@ -1042,13 +1081,21 @@ impl Inner {
             self.emit_notification(service, &evidence, emit, now);
         }
         if transition.queue != QueueOp::None {
+            let (title, body) = if matches!(transition.queue, QueueOp::Enqueue) {
+                (
+                    down_title(&service.name),
+                    down_body(&evidence, service.timeout_ms),
+                )
+            } else {
+                (service.name.clone(), String::new())
+            };
             self.quiet.lock().expect("quiet lock").apply(
                 transition.queue,
                 QueuedDown {
                     service_id: service.id.clone(),
                     name: service.name.clone(),
-                    title: service.name.clone(),
-                    body: String::new(),
+                    title,
+                    body,
                 },
             );
         }
@@ -1113,6 +1160,7 @@ impl Inner {
                 _ = sleep(GROUPER_TICK) => {}
                 _ = self.cancelled() => return,
             }
+            self.maybe_flush_quiet(Utc::now());
             let ready = self.grouper.lock().expect("grouper lock").poll(Utc::now());
             if ready.is_empty() {
                 continue;
@@ -1235,8 +1283,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{ExpectedStatus, HeaderSpec, HttpMethod, MachineStatus, UiState};
-    use crate::notify::{NoopNotifier, Notification, Notifier};
+    use crate::domain::{
+        ExpectedStatus, HeaderSpec, HttpMethod, MachineStatus, QuietHours, UiState,
+    };
+    use crate::notify::{NoopNotifier, Notification, Notifier, QueuedDown};
     use crate::store::{History, SecretStore};
     use std::sync::atomic::AtomicU32;
     use wiremock::matchers::{method, path};
@@ -2129,5 +2179,194 @@ mod tests {
             "grace-window transport fails must not enter offline"
         );
         handle.shutdown();
+    }
+
+    struct Capture(Arc<Mutex<Vec<Notification>>>);
+    impl Notifier for Capture {
+        fn notify(&mut self, notification: Notification) {
+            self.0.lock().expect("notify lock").push(notification);
+        }
+    }
+
+    fn queued(id: &str, name: &str) -> QueuedDown {
+        QueuedDown {
+            service_id: id.into(),
+            name: name.into(),
+            title: name.into(),
+            body: "HTTP 502 · 1.4s".into(),
+        }
+    }
+
+    fn down_runtime() -> RuntimeState {
+        let mut runtime = RuntimeState::pending();
+        runtime.status = MachineStatus::Down;
+        runtime
+    }
+
+    fn always_quiet() -> AppSettings {
+        AppSettings {
+            quiet_hours: Some(QuietHours {
+                start: "00:00".into(),
+                end: "00:00".into(),
+                days: vec![0, 1, 2, 3, 4, 5, 6],
+            }),
+            ..AppSettings::default()
+        }
+    }
+
+    fn handle_with_capture(
+        services: Vec<Service>,
+        history: History,
+    ) -> (SchedulerHandle, Arc<Mutex<Vec<Notification>>>) {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let scheduler = Scheduler::new(SchedulerConfig {
+            services,
+            settings: AppSettings::default(),
+            history,
+            secrets: Arc::new(SecretStore::for_test()),
+            events: Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+            notifier: Box::new(Capture(Arc::clone(&events))),
+            enable_jitter: false,
+            on_poller_dead: Arc::new(|_| {}),
+        })
+        .unwrap();
+        (scheduler.handle(), events)
+    }
+
+    #[test]
+    fn flush_digest_is_queue_not_worst_of() {
+        let (_dir, history) = open_history();
+        let a = sample("pay", "https://pay.example/health".into(), 60);
+        let b = sample("worker", "https://worker.example/health".into(), 60);
+        let (handle, events) = handle_with_capture(vec![a, b], history);
+        handle.with_history(|history| {
+            history.put_runtime("pay", &down_runtime()).unwrap();
+            history.put_runtime("worker", &down_runtime()).unwrap();
+        });
+        {
+            let mut queue = handle.inner.quiet.lock().expect("quiet lock");
+            queue.enter(queued("pay", "Payments"));
+            queue.enter(queued("worker", "Worker"));
+        }
+        handle.inner.maybe_flush_quiet(Utc::now());
+        let got = events.lock().expect("events").clone();
+        assert_eq!(got.len(), 1);
+        match &got[0] {
+            Notification::Digest {
+                service_ids, title, ..
+            } => {
+                assert_eq!(service_ids, &["pay", "worker"]);
+                assert_eq!(title, "2 services down");
+            }
+            other => panic!("expected digest, got {other:?}"),
+        }
+        assert!(handle.inner.quiet.lock().expect("quiet lock").is_empty());
+    }
+
+    #[test]
+    fn flush_drops_snoozed_and_recovered() {
+        let (_dir, history) = open_history();
+        let a = sample("pay", "https://pay.example/health".into(), 60);
+        let b = sample("worker", "https://worker.example/health".into(), 60);
+        let c = sample("auth", "https://auth.example/health".into(), 60);
+        let (handle, events) = handle_with_capture(vec![a, b, c], history);
+        let now = Utc::now();
+        handle.with_history(|history| {
+            let mut snoozed = down_runtime();
+            snoozed.snooze_until = Some(now + chrono::Duration::hours(1));
+            history.put_runtime("pay", &snoozed).unwrap();
+            history.put_runtime("worker", &down_runtime()).unwrap();
+            history
+                .put_runtime("auth", &RuntimeState::pending())
+                .unwrap();
+        });
+        {
+            let mut queue = handle.inner.quiet.lock().expect("quiet lock");
+            queue.enter(queued("pay", "Payments"));
+            queue.enter(queued("worker", "Worker"));
+            queue.enter(queued("auth", "Auth"));
+        }
+        handle.inner.maybe_flush_quiet(now);
+        let got = events.lock().expect("events").clone();
+        assert_eq!(
+            got,
+            vec![Notification::Down {
+                service_id: "worker".into(),
+                title: "Worker".into(),
+                body: "HTTP 502 · 1.4s".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn quiet_window_holds_queue_until_settings_clear() {
+        let (_dir, history) = open_history();
+        let a = sample("pay", "https://pay.example/health".into(), 60);
+        let b = sample("worker", "https://worker.example/health".into(), 60);
+        let (handle, events) = handle_with_capture(vec![a, b], history);
+        handle.update_settings(always_quiet());
+        handle.with_history(|history| {
+            history.put_runtime("pay", &down_runtime()).unwrap();
+            history.put_runtime("worker", &down_runtime()).unwrap();
+        });
+        {
+            let mut queue = handle.inner.quiet.lock().expect("quiet lock");
+            queue.enter(queued("pay", "Payments"));
+            queue.enter(queued("worker", "Worker"));
+        }
+        handle.inner.maybe_flush_quiet(Utc::now());
+        assert!(events.lock().expect("events").is_empty());
+        assert_eq!(handle.inner.quiet.lock().expect("quiet lock").len(), 2);
+
+        handle.update_settings(AppSettings::default());
+        let got = events.lock().expect("events").clone();
+        assert!(
+            matches!(got.as_slice(), [Notification::Digest { .. }]),
+            "clearing quiet hours flushes the digest, got {got:?}"
+        );
+    }
+
+    #[test]
+    fn snooze_drops_from_queue_and_writes_sqlite_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = History::open(dir.path().join("history.sqlite3")).unwrap();
+        let svc = sample("pay", "https://pay.example/health".into(), 60);
+        let store = crate::store::ConfigStore::open(crate::store::Paths::new(dir.path())).unwrap();
+        store.save_services(std::slice::from_ref(&svc)).unwrap();
+        let (handle, _events) = handle_with_capture(vec![svc], history);
+        handle
+            .inner
+            .quiet
+            .lock()
+            .expect("quiet lock")
+            .enter(queued("pay", "Payments"));
+        let until = DateTime::from_timestamp_millis(
+            (Utc::now() + chrono::Duration::minutes(60)).timestamp_millis(),
+        )
+        .unwrap();
+        handle.set_snooze("pay", Some(until)).unwrap();
+        assert!(!handle
+            .inner
+            .quiet
+            .lock()
+            .expect("quiet lock")
+            .contains("pay"));
+        handle.with_history(|history| {
+            assert_eq!(
+                history.load_runtime("pay").unwrap().snooze_until,
+                Some(until)
+            );
+        });
+        let services = store.load_services().unwrap();
+        let encoded = serde_json::to_value(&services[0]).unwrap();
+        assert!(encoded.get("snoozeUntil").is_none());
+        let view = handle.view("pay").unwrap();
+        assert_eq!(view.snooze_until, Some(until));
+        assert_eq!(view.state, UiState::Pending);
     }
 }

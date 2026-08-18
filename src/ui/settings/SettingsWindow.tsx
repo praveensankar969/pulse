@@ -28,6 +28,13 @@ const PANES: Array<{ id: Pane; label: string }> = [
   { id: "defaults", label: "Defaults" },
   { id: "data", label: "Data" },
 ];
+  DEFAULT_QUIET_HOURS,
+  inQuietWindow,
+  overnightFridaySaturdayHolds,
+  WEEKDAYS,
+} from "../../lib/format";
+import { getSettings, onSettings, updateSettings } from "../../lib/ipc";
+import type { AppSettings, QuietHours } from "../../lib/types";
 
 function cloneSettings(settings: AppSettings): AppSettings {
   return {
@@ -46,6 +53,14 @@ export function SettingsWindow() {
   const [includeSecrets, setIncludeSecrets] = useState(false);
   const [resetTyped, setResetTyped] = useState("");
   const [failDraft, setFailDraft] = useState("3");
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(tick);
+  }, []);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -79,6 +94,14 @@ export function SettingsWindow() {
       stop = () => {
         for (const fn of unlisten) fn();
       };
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+      try {
+        stop = await onSettings(setSettings);
+      } catch {
+        // Vite-only preview has no Tauri events.
+      }
     })();
     return () => stop?.();
   }, []);
@@ -95,6 +118,10 @@ export function SettingsWindow() {
         void getCurrentWindow().close();
       } catch {
         // Browser/vite-only.
+      try {
+        void getCurrentWindow().close();
+      } catch {
+        // Vite-only.
       }
     };
     window.addEventListener("keydown", onKey);
@@ -121,6 +148,7 @@ export function SettingsWindow() {
       unlisten?.();
     };
   }, [askLaunch]);
+  }, []);
 
   async function persist(next: AppSettings): Promise<void> {
     setError(null);
@@ -129,6 +157,7 @@ export function SettingsWindow() {
       setSettings(saved);
       setFailDraft(String(saved.failThreshold));
       applyTheme(saved.theme);
+      setSettings(await updateSettings(next));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -466,6 +495,111 @@ export function SettingsWindow() {
             </button>
           </section>
         ) : null}
+  const active = quietOn && quiet ? inQuietWindow(quiet, new Date(now)) : false;
+  const overnightOk = overnightFridaySaturdayHolds(quiet ?? DEFAULT_QUIET_HOURS);
+
+  return (
+    <main className="settings" aria-label="Settings">
+      <div className="settings-panes">
+        <section className="settings-pane" data-pane="notifications">
+          {error ? (
+            <p className="hint danger-text" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={settings.notifications}
+              onChange={(event) =>
+                void patch({ notifications: event.target.checked })
+              }
+            />
+            <span>Notifications</span>
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={settings.sound}
+              onChange={(event) => void patch({ sound: event.target.checked })}
+            />
+            <span>Play sound</span>
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={quietOn}
+              onChange={(event) =>
+                void patch({
+                  quietHours: event.target.checked
+                    ? { ...DEFAULT_QUIET_HOURS, days: [...DEFAULT_QUIET_HOURS.days] }
+                    : undefined,
+                })
+              }
+            />
+            <span>Quiet hours</span>
+          </label>
+          {quietOn && quiet ? (
+            <fieldset className="quiet-hours">
+              <legend>Quiet hours</legend>
+              <div className="row-2">
+                <label className="field">
+                  <span>Start</span>
+                  <input
+                    type="time"
+                    value={quiet.start}
+                    onChange={(event) =>
+                      void persist({
+                        ...settings,
+                        quietHours: {
+                          ...quiet,
+                          start: event.target.value.slice(0, 5),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>End</span>
+                  <input
+                    type="time"
+                    value={quiet.end}
+                    onChange={(event) =>
+                      void persist({
+                        ...settings,
+                        quietHours: {
+                          ...quiet,
+                          end: event.target.value.slice(0, 5),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <div className="day-pills">
+                {WEEKDAYS.map((label, day) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={quiet.days.includes(day) ? "is-on" : undefined}
+                    onClick={() => toggleDay(day)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="hint">
+                Overnight ranges are valid. Friday 22:00 runs through Saturday
+                08:00 even if Saturday is unchecked
+                {overnightOk ? "" : " — overnight check failed"}. Tray still
+                turns red; toasts wait for a digest unless Always alert is on.
+              </p>
+              {active ? (
+                <p className="hint">Quiet hours are active now.</p>
+              ) : null}
+            </fieldset>
+          ) : null}
+        </section>
       </div>
     </main>
   );

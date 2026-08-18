@@ -13,6 +13,12 @@ use crate::domain::{CheckResult, CompactSample, ServiceView};
 use crate::domain::{CheckResult, ServiceDraft, ServiceView};
 use crate::notify::request_permission_on_notify_save;
 use crate::domain::{AppSettings, CheckResult, ServiceView};
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+
+use crate::domain::{AppSettings, CheckResult, CompactSample, ServiceDraft, ServiceView};
+use crate::notify::{request_permission_on_notify_save, NotifyHub};
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
@@ -229,6 +235,42 @@ pub fn get_detail(state: State<'_, AppState>, id: String) -> Result<DetailPayloa
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, SchedulerError> {
+    Ok(state
+        .store
+        .lock()
+        .expect("config store lock")
+        .load_settings()?)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn update_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> Result<AppSettings, SchedulerError> {
+    state
+        .store
+        .lock()
+        .expect("config store lock")
+        .save_settings(&settings)?;
+    state.scheduler.update_settings(settings.clone());
+    if let Some(hub) = app.try_state::<NotifyHub>() {
+        hub.set_sound(settings.sound);
+    }
+    if settings.notifications {
+        request_permission_on_notify_save(&app);
+    }
+    let _ = app.emit("pulse://settings", &settings);
+    Ok(settings)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn open_settings(app: AppHandle) {
+    crate::platform::settings::open_settings(&app);
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub fn snooze(
     state: State<'_, AppState>,
     id: String,
@@ -400,9 +442,10 @@ fn open_http_url(url: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::secret_header_exists;
-    use crate::domain::{HeaderSpec, HttpMethod, Service};
+    use crate::domain::{AppSettings, HeaderSpec, HttpMethod, QuietHours, Service};
+    use crate::notify::in_quiet_window;
     use crate::store::{ConfigStore, Paths, RevealError};
-    use chrono::Utc;
+    use chrono::{NaiveDate, NaiveDateTime, Utc};
 
     fn sample(id: &str) -> Service {
         Service {
@@ -441,6 +484,52 @@ mod tests {
             .unwrap();
         assert_eq!(parsed.to_rfc3339(), "2026-08-19T08:00:00+00:00");
         assert!(super::parse_snooze_until(Some("not-a-date".into())).is_err());
+    }
+
+    fn ndt(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(hour, minute, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn overnight_friday_saturday_via_settings_persist() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ConfigStore::open(Paths::new(dir.path())).unwrap();
+        let settings = AppSettings {
+            quiet_hours: Some(QuietHours {
+                start: "22:00".into(),
+                end: "08:00".into(),
+                days: vec![1, 2, 3, 4, 5],
+            }),
+            ..AppSettings::default()
+        };
+        store.save_settings(&settings).unwrap();
+        let hours = store.load_settings().unwrap().quiet_hours.unwrap();
+        // 2026-08-21 Friday; 22nd Saturday is unchecked.
+        assert!(!in_quiet_window(&hours, ndt(2026, 8, 21, 21, 59)));
+        assert!(in_quiet_window(&hours, ndt(2026, 8, 21, 22, 0)));
+        assert!(in_quiet_window(&hours, ndt(2026, 8, 22, 0, 0)));
+        assert!(in_quiet_window(&hours, ndt(2026, 8, 22, 7, 59)));
+        assert!(!in_quiet_window(&hours, ndt(2026, 8, 22, 8, 0)));
+        assert!(!in_quiet_window(&hours, ndt(2026, 8, 22, 22, 0)));
+        assert!(!in_quiet_window(&hours, ndt(2026, 8, 23, 7, 59)));
+    }
+
+    #[test]
+    fn invalid_quiet_hours_rejected_on_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ConfigStore::open(Paths::new(dir.path())).unwrap();
+        let settings = AppSettings {
+            quiet_hours: Some(QuietHours {
+                start: "25:00".into(),
+                end: "08:00".into(),
+                days: vec![1, 2, 3, 4, 5],
+            }),
+            ..AppSettings::default()
+        };
+        assert!(store.save_settings(&settings).is_err());
     }
 
     #[test]

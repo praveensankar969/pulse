@@ -2,6 +2,8 @@ use chrono::{DateTime, Datelike, NaiveDateTime, NaiveTime, TimeZone};
 
 use crate::domain::QuietHours;
 
+use super::Notification;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum QueueOp {
     #[default]
@@ -20,7 +22,7 @@ pub struct QueuedDown {
 
 /// Services that **entered Down during this quiet window** and are still Down.
 ///
-/// Membership is the queue, not the current worst-of. Flush is PR 15.
+/// Membership is the queue, not the current worst-of.
 #[derive(Debug, Default, Clone)]
 pub struct QuietQueue {
     entries: Vec<QueuedDown>,
@@ -67,13 +69,41 @@ impl QuietQueue {
         self.entries.len()
     }
 
-    /// Flush queued downs after a quiet window ends. No-op until PR 15.
-    pub fn flush(&mut self) {}
+    pub fn retain(&mut self, keep: impl FnMut(&QueuedDown) -> bool) {
+        self.entries.retain(keep);
+    }
+
+    /// Drain the queue. One digest if `len > 1`, else the single held toast.
+    pub fn flush(&mut self) -> Vec<Notification> {
+        let entries = std::mem::take(&mut self.entries);
+        match entries.len() {
+            0 => Vec::new(),
+            1 => {
+                let entry = entries.into_iter().next().expect("len 1");
+                vec![Notification::Down {
+                    service_id: entry.service_id,
+                    title: entry.title,
+                    body: entry.body,
+                }]
+            }
+            _ => {
+                let pairs: Vec<(String, String)> = entries
+                    .into_iter()
+                    .map(|entry| (entry.service_id, entry.name))
+                    .collect();
+                let refs: Vec<(&str, &str)> = pairs
+                    .iter()
+                    .map(|(id, name)| (id.as_str(), name.as_str()))
+                    .collect();
+                vec![Notification::digest(&refs)]
+            }
+        }
+    }
 }
 
-/// Flush entry point. Called on OS wake if the quiet window has ended.
-pub fn flush_quiet_queue(queue: &mut QuietQueue) {
-    queue.flush();
+/// Flush entry point. Called when the window ends and on OS wake if it already ended.
+pub fn flush_quiet_queue(queue: &mut QuietQueue) -> Vec<Notification> {
+    queue.flush()
 }
 
 pub fn in_quiet_hours<Tz: TimeZone>(hours: &QuietHours, now: DateTime<Tz>) -> bool {
@@ -214,12 +244,65 @@ mod tests {
     }
 
     #[test]
-    fn flush_is_noop_until_pr15() {
+    fn flush_single_emits_held_toast() {
         let mut queue = QuietQueue::new();
         queue.apply(QueueOp::Enqueue, entry("payments"));
-        flush_quiet_queue(&mut queue);
-        assert!(queue.contains("payments"));
-        assert_eq!(queue.len(), 1);
+        let events = flush_quiet_queue(&mut queue);
+        assert!(queue.is_empty());
+        assert_eq!(
+            events,
+            vec![Notification::Down {
+                service_id: "payments".into(),
+                title: "payments".into(),
+                body: "HTTP 502 · 1.4s".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn flush_many_emits_digest_not_worst_of() {
+        let mut queue = QuietQueue::new();
+        queue.apply(QueueOp::Enqueue, entry("payments"));
+        queue.apply(QueueOp::Enqueue, entry("worker"));
+        queue.apply(QueueOp::Enqueue, entry("auth"));
+        let events = flush_quiet_queue(&mut queue);
+        assert!(queue.is_empty());
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            Notification::Digest {
+                service_ids,
+                title,
+                body,
+            } => {
+                assert_eq!(service_ids, &["payments", "worker", "auth"]);
+                assert_eq!(title, "3 services down");
+                assert_eq!(body, "payments, worker, auth");
+            }
+            other => panic!("expected digest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn flush_empty_is_noop() {
+        let mut queue = QuietQueue::new();
+        assert!(flush_quiet_queue(&mut queue).is_empty());
+    }
+
+    #[test]
+    fn retain_drops_before_flush() {
+        let mut queue = QuietQueue::new();
+        queue.apply(QueueOp::Enqueue, entry("payments"));
+        queue.apply(QueueOp::Enqueue, entry("worker"));
+        queue.retain(|entry| entry.service_id != "payments");
+        let events = flush_quiet_queue(&mut queue);
+        assert_eq!(
+            events,
+            vec![Notification::Down {
+                service_id: "worker".into(),
+                title: "worker".into(),
+                body: "HTTP 502 · 1.4s".into(),
+            }]
+        );
     }
 
     #[test]

@@ -1,3 +1,6 @@
+pub mod detail;
+pub mod settings;
+pub mod tray;
 pub mod wake;
 
 pub use wake::{listen, PowerEvent, WakeGuard};

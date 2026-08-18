@@ -17,6 +17,7 @@ export type OfflinePayload = { offline: boolean };
 export async function listServices(): Promise<ServiceView[]> {
   return invoke<ServiceView[]>("list_services");
 import type {
+  AppSettings,
   CheckResult,
   DetailPayload,
   ServiceView,
@@ -24,8 +25,30 @@ import type {
 
 export type BeginReveal = { token: string; ttlMs: number };
 
+export async function listServices(): Promise<ServiceView[]> {
+  return invoke<ServiceView[]>("list_services");
+}
+
 export async function getDetail(id: string): Promise<DetailPayload> {
   return invoke<DetailPayload>("get_detail", { id });
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  return invoke<AppSettings>("get_settings");
+}
+
+export async function updateSettings(
+  settings: AppSettings,
+): Promise<AppSettings> {
+  return invoke<AppSettings>("update_settings", { settings });
+}
+
+export async function openSettings(): Promise<void> {
+  try {
+    await invoke("open_settings");
+  } catch {
+    await emit("pulse://open-settings");
+  }
 }
 
 export async function checkNow(id: string): Promise<CheckResult> {
@@ -215,5 +238,13 @@ export async function onDetailService(
 ): Promise<UnlistenFn> {
   return listen<{ id: string }>("pulse://detail-service", (event) => {
     if (event.payload.id) handler(event.payload.id);
+  });
+}
+
+export async function onSettings(
+  handler: (settings: AppSettings) => void,
+): Promise<UnlistenFn> {
+  return listen<AppSettings>("pulse://settings", (event) => {
+    handler(event.payload);
   });
 }
