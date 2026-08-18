@@ -1,10 +1,30 @@
 use std::collections::HashSet;
+use std::fmt;
 
 use chrono::{DateTime, Utc};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{Assertion, CheckResult, SparklinePoint, UiState, ValidationError};
+
+/// UI mask. Never persist or send this string as a header value.
+pub const SECRET_MASK: &str = "••••••••";
+
+pub fn is_mask(value: &str) -> bool {
+    value == SECRET_MASK
+}
+
+pub fn is_redacted_header(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "set-cookie"
+            | "x-api-key"
+            | "x-auth-token"
+    )
+}
 
 pub const MIN_INTERVAL_SEC: u32 = 15;
 pub const MAX_INTERVAL_SEC: u32 = 600;
@@ -96,7 +116,11 @@ impl<'de> Deserialize<'de> for ExpectedStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeaderSpec {
     pub key: String,
@@ -104,6 +128,106 @@ pub struct HeaderSpec {
     /// Plaintext only when secret == false. Secret values never sit here on disk.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+}
+
+impl fmt::Debug for HeaderSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HeaderSpec")
+            .field("key", &self.key)
+            .field("secret", &self.secret)
+            .field(
+                "value",
+                &redacted_opt(self.secret, self.value.as_deref(), &self.key),
+            )
+            .finish()
+    }
+}
+
+/// Wire header for the UI. Secret values are `""` or the mask, never plaintext.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Header {
+    pub key: String,
+    pub value: String,
+    pub secret: bool,
+    pub has_value: bool,
+}
+
+impl fmt::Debug for Header {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Header")
+            .field("key", &self.key)
+            .field(
+                "value",
+                &redacted_opt(self.secret, Some(self.value.as_str()), &self.key)
+                    .unwrap_or(self.value.as_str()),
+            )
+            .field("secret", &self.secret)
+            .field("has_value", &self.has_value)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftHeader {
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub secret: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub clear: bool,
+}
+
+impl fmt::Debug for DraftHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DraftHeader")
+            .field("key", &self.key)
+            .field(
+                "value",
+                &redacted_opt(self.secret, self.value.as_deref(), &self.key),
+            )
+            .field("secret", &self.secret)
+            .field("clear", &self.clear)
+            .finish()
+    }
+}
+
+/// Editor / Test now payload. Secret values never persist on `Service`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceDraft {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub name: String,
+    pub url: String,
+    pub method: HttpMethod,
+    pub headers: Vec<DraftHeader>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    pub interval_sec: u32,
+    pub timeout_ms: u32,
+    pub expected_status: ExpectedStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_redirects: Option<bool>,
+    pub assertions: Vec<Assertion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_latency_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_url: Option<String>,
+    pub notify: bool,
+    pub always_alert: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fail_threshold: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+}
+
+fn redacted_opt<'a>(secret: bool, value: Option<&'a str>, key: &str) -> Option<&'a str> {
+    match value {
+        Some(_) if secret || is_redacted_header(key) => Some(SECRET_MASK),
+        other => other,
+    }
 }
 
 /// Persisted config. No snooze, no last result, no consecutive fails.

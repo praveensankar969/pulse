@@ -1,7 +1,11 @@
 pub mod domain;
+pub mod ipc;
 pub mod store;
 
 use tauri::Manager;
+
+use crate::ipc::AppState;
+use crate::store::{ConfigStore, Paths};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,9 +34,16 @@ pub fn run() {
             // Accessory + Info.plist LSUIElement: no Dock icon.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            let _ = app;
+            let paths = Paths::from_app(app.handle())?;
+            let store = ConfigStore::open(paths)?;
+            app.manage(AppState::new(store));
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            ipc::commands::begin_reveal,
+            ipc::commands::reveal_secret,
+            ipc::commands::end_reveal,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

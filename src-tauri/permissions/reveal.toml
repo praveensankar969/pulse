@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-begin-reveal"
+description = "Issue a short-lived press token for secret reveal."
+commands.allow = ["begin_reveal"]
+
+[[permission]]
+identifier = "allow-reveal-secret"
+description = "Return a secret header value given a valid press token."
+commands.allow = ["reveal_secret"]
+
+[[permission]]
+identifier = "allow-end-reveal"
+description = "Invalidate a secret reveal press token."
+commands.allow = ["end_reveal"]
+
+[[set]]
+identifier = "allow-reveal"
+description = "Press-and-hold secret reveal. Detail and editor only."
+permissions = ["allow-begin-reveal", "allow-reveal-secret", "allow-end-reveal"]

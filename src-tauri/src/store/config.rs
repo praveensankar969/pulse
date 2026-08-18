@@ -1,11 +1,13 @@
 use std::fs;
 use std::path::Path;
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use super::migrate::{self, SCHEMA_VERSION};
+use super::secrets::{persist_draft_headers, SecretError, SecretStore};
 use super::Paths;
-use crate::domain::{AppSettings, Service, ValidationError};
+use crate::domain::{AppSettings, HeaderSpec, Service, ServiceDraft, ValidationError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -19,6 +21,26 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Path(String),
+    #[error("service not found")]
+    NotFound,
+    #[error("could not store secret header `{key}` in the OS keychain: {message}")]
+    Keychain { key: String, message: String },
+}
+
+impl From<SecretError> for StoreError {
+    fn from(error: SecretError) -> Self {
+        match error {
+            SecretError::Backend { key, message } => Self::Keychain { key, message },
+            SecretError::MaskValue => Self::Keychain {
+                key: String::new(),
+                message: SecretError::MaskValue.to_string(),
+            },
+            other => Self::Keychain {
+                key: other.key().unwrap_or_default().to_string(),
+                message: other.to_string(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -73,6 +95,7 @@ impl ConfigStore {
 
         let rewrite_config = migrate::migrate_config(&mut config)?;
         let rewrite_services = migrate::migrate_services(&mut services)?;
+        let stripped = strip_secret_values(&mut services.services);
 
         config.settings.validate()?;
         Service::validate_list(&services.services)?;
@@ -80,7 +103,7 @@ impl ConfigStore {
         if rewrite_config {
             write_json(&paths.config_file(), &config)?;
         }
-        if rewrite_services {
+        if rewrite_services || stripped {
             write_json(&paths.services_file(), &services)?;
         }
 
@@ -110,10 +133,7 @@ impl ConfigStore {
     }
 
     pub fn load_services(&self) -> Result<Vec<Service>, StoreError> {
-        let file = read_json::<ServicesFile>(&self.paths.services_file())?;
-        migrate::ensure_supported(file.schema_version)?;
-        Service::validate_list(&file.services)?;
-        Ok(file.services)
+        Ok(self.load_services_file()?.services)
     }
 
     pub fn save_services(&self, services: &[Service]) -> Result<(), StoreError> {
@@ -127,6 +147,84 @@ impl ConfigStore {
         )
     }
 
+    pub fn save_service(
+        &self,
+        secrets: &SecretStore,
+        draft: ServiceDraft,
+    ) -> Result<Service, StoreError> {
+        let mut services = self.load_services()?;
+        let now = Utc::now();
+        let (index, id, created_at, paused, previous_secret_keys) =
+            if let Some(id) = draft.id.as_deref() {
+                let index = services
+                    .iter()
+                    .position(|service| service.id == id)
+                    .ok_or(StoreError::NotFound)?;
+                let existing = &services[index];
+                let previous = existing
+                    .headers
+                    .iter()
+                    .filter(|header| header.secret)
+                    .map(|header| header.key.clone())
+                    .collect::<Vec<_>>();
+                (
+                    Some(index),
+                    existing.id.clone(),
+                    existing.created_at,
+                    existing.paused,
+                    previous,
+                )
+            } else {
+                (None, ulid::Ulid::new().to_string(), now, false, Vec::new())
+            };
+
+        let preview = Service {
+            id: id.clone(),
+            name: draft.name,
+            url: draft.url,
+            method: draft.method,
+            headers: draft
+                .headers
+                .iter()
+                .map(|header| HeaderSpec {
+                    key: header.key.clone(),
+                    secret: header.secret,
+                    value: if header.secret {
+                        None
+                    } else {
+                        Some(header.value.clone().unwrap_or_default())
+                    },
+                })
+                .collect(),
+            body: draft.body,
+            interval_sec: draft.interval_sec,
+            timeout_ms: draft.timeout_ms,
+            expected_status: draft.expected_status,
+            assertions: draft.assertions,
+            max_latency_ms: draft.max_latency_ms,
+            action_url: draft.action_url,
+            notify: draft.notify,
+            always_alert: draft.always_alert,
+            paused,
+            follow_redirects: draft.follow_redirects.unwrap_or(true),
+            fail_threshold: draft.fail_threshold,
+            group: draft.group,
+            created_at,
+            updated_at: now,
+        };
+        preview.validate()?;
+
+        let headers = persist_draft_headers(secrets, &id, &draft.headers, &previous_secret_keys)?;
+        let service = Service { headers, ..preview };
+
+        match index {
+            Some(index) => services[index] = service.clone(),
+            None => services.push(service.clone()),
+        }
+        self.save_services(&services)?;
+        Ok(service)
+    }
+
     pub fn load_config_file(&self) -> Result<ConfigFile, StoreError> {
         let file = read_json::<ConfigFile>(&self.paths.config_file())?;
         migrate::ensure_supported(file.schema_version)?;
@@ -135,11 +233,28 @@ impl ConfigStore {
     }
 
     pub fn load_services_file(&self) -> Result<ServicesFile, StoreError> {
-        let file = read_json::<ServicesFile>(&self.paths.services_file())?;
+        let mut file = read_json::<ServicesFile>(&self.paths.services_file())?;
         migrate::ensure_supported(file.schema_version)?;
+        if strip_secret_values(&mut file.services) {
+            write_json(&self.paths.services_file(), &file)?;
+        }
         Service::validate_list(&file.services)?;
         Ok(file)
     }
+}
+
+/// Secret values never sit in services.json. Strip any that leaked in.
+pub fn strip_secret_values(services: &mut [Service]) -> bool {
+    let mut dirty = false;
+    for service in services {
+        for header in &mut service.headers {
+            if header.secret && header.value.is_some() {
+                header.value = None;
+                dirty = true;
+            }
+        }
+    }
+    dirty
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, StoreError> {
@@ -206,10 +321,11 @@ fn replace_file(tmp: &Path, dest: &Path) -> Result<(), StoreError> {
 mod tests {
     use super::{atomic_write, ConfigFile, ConfigStore, ServicesFile, StoreError};
     use crate::domain::{
-        AppSettings, ExpectedStatus, HeaderSpec, HttpMethod, Service, ValidationError,
-        DEFAULT_FAIL_THRESHOLD, DEFAULT_INTERVAL_SEC, DEFAULT_TIMEOUT_MS,
+        AppSettings, DraftHeader, ExpectedStatus, HeaderSpec, HttpMethod, Service, ServiceDraft,
+        ValidationError, DEFAULT_FAIL_THRESHOLD, DEFAULT_INTERVAL_SEC, DEFAULT_TIMEOUT_MS,
+        SECRET_MASK,
     };
-    use crate::store::Paths;
+    use crate::store::{Paths, SecretStore};
     use std::fs;
     use std::path::PathBuf;
 
@@ -437,14 +553,140 @@ mod tests {
 
     #[cfg(feature = "debug-plaintext-secrets")]
     #[test]
-    fn secret_header_plaintext_allowed_with_feature() {
+    fn secret_header_plaintext_is_stripped_on_load() {
         let mut service = sample_service();
         service.headers[0].value = Some("super-secret".into());
         service.validate().unwrap();
-        let (_dir, store) = open_temp();
-        store.save_services(&[service.clone()]).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        fs::create_dir_all(dir.path()).unwrap();
+        write_json(
+            &paths.services_file(),
+            &ServicesFile {
+                schema_version: 1,
+                services: vec![service],
+            },
+        )
+        .unwrap();
+        write_json(&paths.config_file(), &ConfigFile::default()).unwrap();
+        let store = ConfigStore::open(paths).unwrap();
         let loaded = store.load_services().unwrap();
-        assert_eq!(loaded[0].headers[0].value.as_deref(), Some("super-secret"));
+        assert_eq!(loaded[0].headers[0].value, None);
+        let raw = fs::read_to_string(store.paths().services_file()).unwrap();
+        assert!(!raw.contains("super-secret"));
+    }
+
+    fn draft_from_sample(secret: &str) -> ServiceDraft {
+        let service = sample_service();
+        ServiceDraft {
+            id: None,
+            name: service.name,
+            url: service.url,
+            method: service.method,
+            headers: vec![
+                DraftHeader {
+                    key: "Authorization".into(),
+                    value: Some(secret.into()),
+                    secret: true,
+                    clear: false,
+                },
+                DraftHeader {
+                    key: "Accept".into(),
+                    value: Some("application/json".into()),
+                    secret: false,
+                    clear: false,
+                },
+            ],
+            body: service.body,
+            interval_sec: service.interval_sec,
+            timeout_ms: service.timeout_ms,
+            expected_status: service.expected_status,
+            follow_redirects: Some(service.follow_redirects),
+            assertions: service.assertions,
+            max_latency_ms: service.max_latency_ms,
+            action_url: service.action_url,
+            notify: service.notify,
+            always_alert: service.always_alert,
+            fail_threshold: service.fail_threshold,
+            group: service.group,
+        }
+    }
+
+    #[test]
+    fn save_service_puts_secrets_in_keychain_not_json() {
+        let (_dir, store) = open_temp();
+        let secrets = SecretStore::for_test();
+        let saved = store
+            .save_service(&secrets, draft_from_sample("Bearer tok"))
+            .unwrap();
+        assert_eq!(saved.headers[0].value, None);
+        assert_eq!(
+            secrets.get(&saved.id, "Authorization").unwrap(),
+            "Bearer tok"
+        );
+        let raw = fs::read_to_string(store.paths().services_file()).unwrap();
+        assert!(!raw.contains("Bearer tok"));
+        let loaded = store.load_services().unwrap();
+        assert_eq!(loaded[0].headers[0].value, None);
+        let resolved = secrets.resolve_service(&loaded[0]).unwrap();
+        assert_eq!(resolved.get("Authorization"), Some("Bearer tok"));
+        assert_ne!(resolved.get("Authorization"), Some(SECRET_MASK));
+    }
+
+    #[test]
+    fn save_service_keychain_failure_does_not_write_json() {
+        let (_dir, store) = open_temp();
+        let secrets = SecretStore::for_test();
+        let mut draft = draft_from_sample("Bearer tok");
+        draft.id = Some("known-id".into());
+        store
+            .save_services(&[Service {
+                id: "known-id".into(),
+                ..sample_service()
+            }])
+            .unwrap();
+        secrets.set_next_error(
+            "known-id",
+            "Authorization",
+            keyring::Error::NoStorageAccess(Box::new(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "deny",
+            ))),
+        );
+        let err = store.save_service(&secrets, draft).unwrap_err();
+        assert!(matches!(err, StoreError::Keychain { .. }));
+        let loaded = store.load_services().unwrap();
+        assert_eq!(loaded[0].headers[0].value, None);
+        let raw = fs::read_to_string(store.paths().services_file()).unwrap();
+        assert!(!raw.contains("Bearer tok"));
+    }
+
+    #[test]
+    fn load_strips_leaked_secret_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut service = sample_service();
+        service.headers[0].value = Some("leaked-secret".into());
+        fs::write(
+            paths.services_file(),
+            serde_json::to_string_pretty(&ServicesFile {
+                schema_version: 1,
+                services: vec![service],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            paths.config_file(),
+            serde_json::to_string_pretty(&ConfigFile::default()).unwrap(),
+        )
+        .unwrap();
+        let store = ConfigStore::open(paths).unwrap();
+        let loaded = store.load_services().unwrap();
+        assert_eq!(loaded[0].headers[0].value, None);
+        let raw = fs::read_to_string(store.paths().services_file()).unwrap();
+        assert!(!raw.contains("leaked-secret"));
     }
 
     #[test]

@@ -58,6 +58,8 @@ pub enum ValidationError {
     ExpectedStatusEmpty,
     #[error("secret header `{0}` cannot be stored in this build")]
     SecretNotSupported(String),
+    #[error("duplicate header `{0}`")]
+    DuplicateHeader(String),
     #[error("header key must be 1–128 characters")]
     HeaderKey,
     #[error("header value must be at most 8192 characters")]

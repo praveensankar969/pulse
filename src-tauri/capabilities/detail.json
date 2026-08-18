@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "detail",
-  "description": "Evidence window. Reveal commands land here in a later PR.",
+  "description": "Evidence window. Press-and-hold secret reveal allowed.",
   "windows": ["detail"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-reveal"]
 }

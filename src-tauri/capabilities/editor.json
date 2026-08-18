@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "Add/edit window. Reveal commands land here in a later PR.",
+  "description": "Add/edit window. Press-and-hold secret reveal allowed.",
   "windows": ["editor"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-reveal"]
 }
