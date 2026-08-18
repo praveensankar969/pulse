@@ -2,7 +2,8 @@
 //!
 //! Plugin `NotificationBuilder::show` is fire-and-forget (no desktop click
 //! payload; "actions" are mobile-only). We send through notify-rust — the same
-//! backend the plugin uses — and `wait_for_action` shows the popover.
+//! backend the plugin uses — and `wait_for_response` shows the popover.
+//! Windows body-click is `NotificationResponse::Default` (not `"__closed"`).
 //! `RunEvent::Reopen` is only a Dock-relaunch fallback; this app is an
 //! accessory / LSUIElement and has no Dock icon, so banner click does not go
 //! through Reopen. No quiet-hours flush.
@@ -114,10 +115,16 @@ pub fn parse_focus_arg(arg: &str) -> Option<Option<String>> {
 }
 
 /// Banner / toast click vs dismiss. notify-rust has no service-id payload.
-pub fn is_click_action(action: &str) -> bool {
-    !matches!(
-        action,
-        "__closed__" | "closed" | "dismissed" | "__dismissed__"
+///
+/// Windows body-click is [`notify_rust::NotificationResponse::Default`]
+/// (`on_activated(None)`). `wait_for_action` maps that to `"__closed"`;
+/// use [`wait_for_response`](notify_rust::NotificationHandle::wait_for_response).
+pub fn is_click_response(response: &notify_rust::NotificationResponse) -> bool {
+    matches!(
+        response,
+        notify_rust::NotificationResponse::Default
+            | notify_rust::NotificationResponse::Action(_)
+            | notify_rust::NotificationResponse::Reply(_)
     )
 }
 
@@ -203,7 +210,7 @@ impl<R: Runtime> Notifier for OsNotifier<R> {
         let sound = self.sound_enabled();
         let app = self.app.clone();
         let hub = self.hub.clone();
-        // Plugin show() drops the handle. One notify-rust toast + wait_for_action.
+        // Plugin show() drops the handle. One notify-rust toast + wait_for_response.
         tauri::async_runtime::spawn_blocking(move || {
             deliver_toast(&identifier, &title, &body, sound, &app, &hub);
         });
@@ -222,13 +229,26 @@ fn deliver_toast<R: Runtime>(
     let notification = build_native(identifier, title, body, sound);
     match notification.show() {
         Ok(handle) => {
-            handle.wait_for_action(|action| {
-                if is_click_action(action) {
-                    handle_toast_click(app, hub.last_id());
-                }
+            let _ = handle.wait_for_response(ToastClick {
+                app: app.clone(),
+                hub: hub.clone(),
             });
         }
         Err(error) => tracing::warn!(error = %error, "os toast failed"),
+    }
+}
+
+/// Owned handler — closures fail the HRTB on `FnOnce(&NotificationResponse)`.
+struct ToastClick<R: Runtime> {
+    app: AppHandle<R>,
+    hub: NotifyHub,
+}
+
+impl<R: Runtime> notify_rust::ResponseHandler for ToastClick<R> {
+    fn call(self, response: &notify_rust::NotificationResponse) {
+        if is_click_response(response) {
+            handle_toast_click(&self.app, self.hub.last_id());
+        }
     }
 }
 
@@ -331,10 +351,17 @@ mod tests {
     }
 
     #[test]
-    fn closed_is_not_a_click() {
-        assert!(is_click_action("default"));
-        assert!(is_click_action("__default__"));
-        assert!(!is_click_action("__closed__"));
-        assert!(!is_click_action("closed"));
+    fn windows_default_body_click_is_activate() {
+        use notify_rust::{CloseReason, NotificationResponse};
+        assert!(is_click_response(&NotificationResponse::Default));
+        assert!(is_click_response(&NotificationResponse::Action(
+            "open".into()
+        )));
+        assert!(!is_click_response(&NotificationResponse::Closed(
+            CloseReason::Dismissed
+        )));
+        assert!(!is_click_response(&NotificationResponse::Closed(
+            CloseReason::Expired
+        )));
     }
 }

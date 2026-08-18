@@ -119,7 +119,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // Dock relaunch only. Banner click is wait_for_action in notify/os.rs;
+            // Dock relaunch only. Banner click is wait_for_response in notify/os.rs;
             // this accessory app has no Dock icon, so Reopen is not the click path.
             if matches!(event, RunEvent::Reopen { .. }) {
                 handle_activation(app, &[]);
