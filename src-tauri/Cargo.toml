@@ -36,9 +36,20 @@ tauri-plugin-process = { version = "2", optional = true }
 keyring = { version = "3.6", features = ["apple-native", "windows-native"] }
 ulid = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "native-tls",
+    "native-tls-alpn",
+    "macos-system-configuration",
+    "gzip",
+    "brotli",
+    "http2",
+    "charset",
+] }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+wiremock = "0.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Same major as keyring 3.6's macOS crate so PlatformFailure downcast works.
