@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use tokio::sync::{Notify, Semaphore};
-use tokio::task::AbortHandle;
+use tokio::sync::{oneshot, Notify, Semaphore};
+use tokio::task::{AbortHandle, JoinHandle};
 use tokio::time::sleep;
 
 use crate::domain::view::{assemble_view, compact_sample};
@@ -27,7 +27,9 @@ pub const CONCURRENCY: usize = 4;
 pub const STAGGER_CAP: Duration = Duration::from_secs(15);
 pub const CHECK_ALL_GAP: Duration = Duration::from_millis(50);
 pub const VIEW_COALESCE: Duration = Duration::from_millis(100);
+pub const GROUPER_TICK: Duration = Duration::from_millis(200);
 pub const JITTER_FRAC: f64 = 0.10;
+pub const WATCHDOG_RESET: Duration = Duration::from_secs(60);
 
 pub trait PulseEvents: Send + Sync {
     fn emit_services(&self, views: &[ServiceView]);
@@ -112,9 +114,9 @@ fn splitmix64(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// One restart. A second death stays in `poller_dead` and does not loop.
-pub fn should_restart(death_count: u32) -> bool {
-    death_count == 1
+/// One restart. A second death inside 60s stays in `poller_dead`; after 60s uptime allow another.
+pub fn should_restart(death_count: u32, uptime: Duration) -> bool {
+    death_count == 1 || uptime >= WATCHDOG_RESET
 }
 
 pub struct SchedulerConfig {
@@ -132,6 +134,8 @@ struct Slot {
     service: Service,
     check_now: Arc<Notify>,
     abort: Option<AbortHandle>,
+    waiters: Vec<oneshot::Sender<Result<CheckResult, SchedulerError>>>,
+    checking: bool,
 }
 
 struct Inner {
@@ -152,6 +156,9 @@ struct Inner {
     enable_jitter: bool,
     on_poller_dead: Arc<dyn Fn(bool) + Send + Sync>,
     checks: AtomicU64,
+    helpers: Mutex<Vec<AbortHandle>>,
+    child_panic: Notify,
+    child_panic_gen: AtomicU64,
 }
 
 pub struct Scheduler {
@@ -173,6 +180,8 @@ impl Scheduler {
                     service,
                     check_now: Arc::new(Notify::new()),
                     abort: None,
+                    waiters: Vec::new(),
+                    checking: false,
                 },
             );
         }
@@ -195,6 +204,9 @@ impl Scheduler {
                 enable_jitter: config.enable_jitter,
                 on_poller_dead: config.on_poller_dead,
                 checks: AtomicU64::new(0),
+                helpers: Mutex::new(Vec::new()),
+                child_panic: Notify::new(),
+                child_panic_gen: AtomicU64::new(0),
             }),
         })
     }
@@ -268,12 +280,42 @@ impl SchedulerHandle {
     }
 
     pub async fn check_now(&self, id: &str) -> Result<CheckResult, SchedulerError> {
-        let service = self
-            .inner
-            .clone_service(id)
-            .ok_or(SchedulerError::NotFound)?;
-        self.inner.wake(id);
-        self.inner.run_check(&service).await
+        enum Action {
+            Direct,
+            Wait {
+                wake: bool,
+                rx: oneshot::Receiver<Result<CheckResult, SchedulerError>>,
+            },
+        }
+        let action = {
+            let mut slots = self.inner.slots.lock().expect("slots lock");
+            let slot = slots.get_mut(id).ok_or(SchedulerError::NotFound)?;
+            if slot.service.paused || slot.abort.is_none() {
+                Action::Direct
+            } else {
+                let (tx, rx) = oneshot::channel();
+                slot.waiters.push(tx);
+                Action::Wait {
+                    wake: !slot.checking,
+                    rx,
+                }
+            }
+        };
+        match action {
+            Action::Direct => {
+                let service = self
+                    .inner
+                    .clone_service(id)
+                    .ok_or(SchedulerError::NotFound)?;
+                self.inner.run_check(&service).await
+            }
+            Action::Wait { wake, rx } => {
+                if wake {
+                    self.inner.wake(id);
+                }
+                rx.await.map_err(|_| SchedulerError::Canceled)?
+            }
+        }
     }
 
     pub async fn check_all(&self) {
@@ -285,9 +327,14 @@ impl SchedulerHandle {
             if self.inner.stopped.load(Ordering::SeqCst) {
                 return;
             }
-            if let Some(service) = self.inner.clone_service(&id) {
+            let wake = {
+                let slots = self.inner.slots.lock().expect("slots lock");
+                slots.get(&id).is_some_and(|slot| {
+                    slot.abort.is_some() && !slot.service.paused && !slot.checking
+                })
+            };
+            if wake {
                 self.inner.wake(&id);
-                let _ = self.inner.run_check(&service).await;
             }
         }
     }
@@ -411,6 +458,10 @@ impl Inner {
             if let Some(abort) = slot.abort.take() {
                 abort.abort();
             }
+            for waiter in std::mem::take(&mut slot.waiters) {
+                let _ = waiter.send(Err(SchedulerError::Canceled));
+            }
+            slot.checking = false;
         }
     }
 
@@ -419,6 +470,65 @@ impl Inner {
             if let Some(abort) = slot.abort.take() {
                 abort.abort();
             }
+            for waiter in std::mem::take(&mut slot.waiters) {
+                let _ = waiter.send(Err(SchedulerError::Canceled));
+            }
+            slot.checking = false;
+        }
+    }
+
+    fn abort_helpers(&self) {
+        for handle in self.helpers.lock().expect("helpers lock").drain(..) {
+            handle.abort();
+        }
+    }
+
+    fn track_loop<F>(self: &Arc<Self>, fut: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let handle = tokio::spawn(fut);
+        self.helpers
+            .lock()
+            .expect("helpers lock")
+            .push(handle.abort_handle());
+        self.watch_join(handle);
+    }
+
+    fn watch_join(self: &Arc<Self>, handle: JoinHandle<()>) {
+        let inner = Arc::clone(self);
+        tokio::spawn(async move {
+            if matches!(handle.await, Err(error) if error.is_panic()) {
+                inner.child_panic_gen.fetch_add(1, Ordering::SeqCst);
+                inner.child_panic.notify_waiters();
+                inner.child_panic.notify_one();
+            }
+        });
+    }
+
+    fn set_checking(&self, id: &str, checking: bool) {
+        if let Some(slot) = self.slots.lock().expect("slots lock").get_mut(id) {
+            slot.checking = checking;
+        }
+    }
+
+    fn finish_check(&self, id: &str, result: Result<CheckResult, SchedulerError>) {
+        let waiters = {
+            let mut slots = self.slots.lock().expect("slots lock");
+            match slots.get_mut(id) {
+                Some(slot) => {
+                    slot.checking = false;
+                    std::mem::take(&mut slot.waiters)
+                }
+                None => Vec::new(),
+            }
+        };
+        for waiter in waiters {
+            let payload = match &result {
+                Ok(check) => Ok(check.clone()),
+                Err(_) => Err(SchedulerError::Canceled),
+            };
+            let _ = waiter.send(payload);
         }
     }
 
@@ -433,6 +543,8 @@ impl Inner {
                 }
                 slot.service = service;
                 slot.check_now = Arc::new(Notify::new());
+                slot.waiters.clear();
+                slot.checking = false;
             } else {
                 slots.insert(
                     id.clone(),
@@ -440,6 +552,8 @@ impl Inner {
                         service,
                         check_now: Arc::new(Notify::new()),
                         abort: None,
+                        waiters: Vec::new(),
+                        checking: false,
                     },
                 );
             }
@@ -478,22 +592,39 @@ impl Inner {
     }
 
     async fn supervise(self: Arc<Self>) {
+        self.abort_helpers();
+        self.abort_all();
         self.stopped.store(false, Ordering::SeqCst);
         self.poller_dead.store(false, Ordering::SeqCst);
         (self.on_poller_dead)(false);
+        let panic_gen = self.child_panic_gen.load(Ordering::SeqCst);
         self.spawn_all();
-        let coalesce = {
+        self.track_loop({
             let inner = Arc::clone(&self);
-            tokio::spawn(async move { inner.coalesce_loop().await })
-        };
-        let prune = {
+            async move { inner.coalesce_loop().await }
+        });
+        self.track_loop({
             let inner = Arc::clone(&self);
-            tokio::spawn(async move { inner.prune_loop().await })
-        };
+            async move { inner.prune_loop().await }
+        });
+        self.track_loop({
+            let inner = Arc::clone(&self);
+            async move { inner.grouper_loop().await }
+        });
         self.mark_dirty();
-        self.cancelled().await;
-        coalesce.abort();
-        prune.abort();
+        tokio::select! {
+            _ = self.cancelled() => {}
+            _ = self.child_panic.notified() => {
+                if self.child_panic_gen.load(Ordering::SeqCst) > panic_gen
+                    && !self.stopped.load(Ordering::SeqCst)
+                {
+                    self.abort_helpers();
+                    self.abort_all();
+                    panic!("poller child panicked");
+                }
+            }
+        }
+        self.abort_helpers();
         self.abort_all();
     }
 
@@ -522,6 +653,7 @@ impl Inner {
         });
         if let Some(slot) = self.slots.lock().expect("slots lock").get_mut(&id) {
             slot.abort = Some(handle.abort_handle());
+            self.watch_join(handle);
         } else {
             handle.abort();
         }
@@ -545,7 +677,9 @@ impl Inner {
             if service.paused {
                 return;
             }
-            let _ = self.run_check(&service).await;
+            self.set_checking(&id, true);
+            let result = self.run_check(&service).await;
+            self.finish_check(&id, result);
             if self.stopped.load(Ordering::SeqCst) {
                 return;
             }
@@ -706,12 +840,22 @@ impl Inner {
             }
             let views = self.views();
             self.events.emit_services(&views);
+        }
+    }
+
+    async fn grouper_loop(self: Arc<Self>) {
+        loop {
+            tokio::select! {
+                _ = sleep(GROUPER_TICK) => {}
+                _ = self.cancelled() => return,
+            }
             let ready = self.grouper.lock().expect("grouper lock").poll(Utc::now());
-            if !ready.is_empty() {
-                let mut notifier = self.notifier.lock().expect("notifier lock");
-                for item in ready {
-                    notifier.notify(item);
-                }
+            if ready.is_empty() {
+                continue;
+            }
+            let mut notifier = self.notifier.lock().expect("notifier lock");
+            for item in ready {
+                notifier.notify(item);
             }
         }
     }
@@ -725,6 +869,13 @@ impl Inner {
             let _ = self.history.lock().expect("history lock").prune();
         }
     }
+}
+
+fn error_kind_name(kind: ErrorKind) -> String {
+    serde_json::to_value(kind)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| format!("{kind:?}"))
 }
 
 fn fnv(id: &str) -> u64 {
@@ -761,10 +912,7 @@ fn log_check(service: &Service, evidence: &CheckEvidence, next_sec: u32) {
         OutcomeClass::Soft => "soft_fail",
         OutcomeClass::Hard => "hard_fail",
     };
-    let kind = evidence
-        .error_kind
-        .map(|kind| format!("{kind:?}"))
-        .unwrap_or_default();
+    let kind = evidence.error_kind.map(error_kind_name).unwrap_or_default();
     tracing::info!(
         id = %service.id,
         name = %service.name,
@@ -784,18 +932,24 @@ where
     H: FnMut(DateTime<Utc>, bool),
 {
     let mut deaths = 0_u32;
+    let mut started = std::time::Instant::now();
     loop {
         let handle = tokio::spawn(boot());
         match handle.await {
             Ok(()) => return,
             Err(err) if err.is_cancelled() => return,
             Err(_) => {
+                let uptime = started.elapsed();
                 deaths += 1;
-                let restart = should_restart(deaths);
+                let restart = should_restart(deaths, uptime);
                 on_dead(Utc::now(), restart);
                 if !restart {
                     return;
                 }
+                if uptime >= WATCHDOG_RESET {
+                    deaths = 1;
+                }
+                started = std::time::Instant::now();
             }
         }
     }
@@ -805,7 +959,7 @@ where
 mod tests {
     use super::*;
     use crate::domain::{ExpectedStatus, HeaderSpec, HttpMethod, UiState};
-    use crate::notify::NoopNotifier;
+    use crate::notify::{NoopNotifier, Notification, Notifier};
     use crate::store::{History, SecretStore};
     use std::sync::atomic::AtomicU32;
     use wiremock::matchers::{method, path};
@@ -912,9 +1066,19 @@ mod tests {
 
     #[test]
     fn watchdog_restarts_only_once() {
-        assert!(should_restart(1));
-        assert!(!should_restart(2));
-        assert!(!should_restart(0));
+        assert!(should_restart(1, Duration::from_secs(1)));
+        assert!(!should_restart(2, Duration::from_secs(1)));
+        assert!(!should_restart(0, Duration::from_secs(1)));
+        assert!(should_restart(2, WATCHDOG_RESET));
+    }
+
+    #[test]
+    fn check_kind_is_snake_case() {
+        assert_eq!(
+            error_kind_name(ErrorKind::UnexpectedStatus),
+            "unexpected_status"
+        );
+        assert_eq!(error_kind_name(ErrorKind::MissingSecret), "missing_secret");
     }
 
     #[tokio::test]
@@ -1121,8 +1285,21 @@ mod tests {
     #[tokio::test]
     async fn concurrency_caps_at_four() {
         let server = MockServer::start().await;
+        let inflight = Arc::new(AtomicU32::new(0));
+        let max = Arc::new(AtomicU32::new(0));
+        let inflight_c = Arc::clone(&inflight);
+        let max_c = Arc::clone(&max);
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(80)))
+            .respond_with(move |_req: &wiremock::Request| {
+                let now = inflight_c.fetch_add(1, Ordering::SeqCst) + 1;
+                max_c.fetch_max(now, Ordering::SeqCst);
+                let inflight = Arc::clone(&inflight_c);
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(80));
+                    inflight.fetch_sub(1, Ordering::SeqCst);
+                });
+                ResponseTemplate::new(200).set_delay(Duration::from_millis(80))
+            })
             .mount(&server)
             .await;
 
@@ -1143,11 +1320,114 @@ mod tests {
             }),
         );
 
+        // Let the first staggered task finish so check_all wakes a full set.
+        tokio::time::sleep(Duration::from_millis(120)).await;
         let started = std::time::Instant::now();
         handle.check_all().await;
         let elapsed = started.elapsed();
-        // 6 checks at 80ms with cap 4 cannot finish in one wave.
-        assert!(elapsed >= Duration::from_millis(80));
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "check_all must not await HTTP: {elapsed:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        assert!(max.load(Ordering::SeqCst) <= CONCURRENCY as u32);
+        assert!(max.load(Ordering::SeqCst) >= 2);
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn check_now_does_not_double_probe() {
+        let server = MockServer::start().await;
+        let hits = Arc::new(AtomicU32::new(0));
+        let hits_c = Arc::clone(&hits);
+        Mock::given(method("GET"))
+            .respond_with(move |_req: &wiremock::Request| {
+                hits_c.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(200)
+            })
+            .mount(&server)
+            .await;
+
+        let (_dir, history) = open_history();
+        let svc = sample("once", format!("{}/health", server.uri()), 15);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = start(
+            vec![svc],
+            history,
+            Arc::new(SecretStore::for_test()),
+            Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+        );
+
+        wait_state(&handle, "once", UiState::Healthy).await;
+        let after_first = hits.load(Ordering::SeqCst);
+        handle.check_now("once").await.unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), after_first + 1);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(hits.load(Ordering::SeqCst), after_first + 1);
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn down_grouper_flushes_after_two_seconds() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        struct Capture(Arc<Mutex<Vec<Notification>>>);
+        impl Notifier for Capture {
+            fn notify(&mut self, notification: Notification) {
+                self.0.lock().expect("notify lock").push(notification);
+            }
+        }
+
+        let (_dir, history) = open_history();
+        let svc = sample("down", format!("{}/health", server.uri()), 60);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let scheduler = Scheduler::new(SchedulerConfig {
+            services: vec![svc],
+            settings: AppSettings::default(),
+            history,
+            secrets: Arc::new(SecretStore::for_test()),
+            events: Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+            notifier: Box::new(Capture(Arc::clone(&events))),
+            enable_jitter: false,
+            on_poller_dead: Arc::new(|_| {}),
+        })
+        .unwrap();
+        let handle = scheduler.handle();
+        let task = tokio::spawn(scheduler.run());
+
+        wait_state(&handle, "down", UiState::Down).await;
+        assert!(
+            events.lock().expect("events").is_empty(),
+            "Down must wait the 2s group window"
+        );
+
+        // Grouper uses wall-clock Utc::now(); do not use start_paused here.
+        tokio::time::sleep(Duration::from_millis(2_100)).await;
+        let got = events.lock().expect("events").clone();
+        assert!(
+            got.iter().any(
+                |n| matches!(n, Notification::Down { service_id, .. } if service_id == "down")
+            ),
+            "expected Down after 2s, got {got:?}"
+        );
 
         handle.shutdown();
         let _ = task.await;
