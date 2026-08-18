@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pulse — Service Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./app.css" />
+</head>
+<body>
+  <div id="desktop" class="desktop" data-os="mac" data-scene="incident">
+    <header class="menubar" role="banner">
+      <div class="menubar-left">
+        <span class="apple-mark" aria-hidden="true"></span>
+        <span class="menubar-app">Pulse</span>
+        <nav class="scene-nav" aria-label="Preview state">
+          <button type="button" data-scene="empty">Empty</button>
+          <button type="button" data-scene="healthy">Healthy</button>
+          <button type="button" data-scene="incident" class="is-active">Incident</button>
+        </nav>
+      </div>
+      <div class="menubar-right">
+        <button type="button" class="os-toggle" id="osToggle" title="Switch desktop chrome">macOS</button>
+        <div class="status-cluster">
+          <span class="wifi-mark" aria-hidden="true"></span>
+          <span class="battery-mark" aria-hidden="true"></span>
+          <time id="clock" datetime="">Tue Aug 18&nbsp;&nbsp;9:41 AM</time>
+        </div>
+        <button type="button" class="tray-hit" id="trayHit" aria-label="Pulse tray" aria-expanded="true">
+          <span class="tray-icon" id="trayIcon" data-state="down" data-badge="2">
+            <span class="tray-mark"></span>
+            <span class="tray-badge">2</span>
+          </span>
+        </button>
+      </div>
+    </header>
+
+    <div class="notify-stack" id="notifyStack" aria-live="polite"></div>
+
+    <aside class="popover" id="popover" role="dialog" aria-label="Pulse">
+      <header class="popover-head">
+        <div class="popover-title">
+          <span class="wordmark">Pulse</span>
+          <span class="count" id="summaryCount">7 services · 2 down</span>
+        </div>
+        <button type="button" class="icon-btn" id="addBtn" title="Add service" aria-label="Add service">+</button>
+      </header>
+      <div class="summary-strip" id="summaryStrip">2 down · Payments API, Worker</div>
+      <div class="empty-state" id="emptyState" hidden>
+        <p>Add the HTTP endpoints you own. Pulse will watch them from the tray.</p>
+        <button type="button" class="btn primary" id="emptyAdd">Add service</button>
+      </div>
+      <ul class="service-list" id="serviceList"></ul>
+      <footer class="popover-foot">
+        <button type="button" class="text-btn" id="checkAll">Check all</button>
+        <span class="foot-spacer"></span>
+        <button type="button" class="text-btn" id="openSettings">Settings</button>
+        <button type="button" class="text-btn danger-quiet" id="quitBtn">Quit</button>
+      </footer>
+    </aside>
+
+    <section class="util-window" id="detailWin" hidden>
+      <header class="win-chrome">
+        <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h2 id="detailTitle">Payments API</h2>
+        <button type="button" class="win-close" data-close="detailWin" aria-label="Close">✕</button>
+      </header>
+      <div class="win-body" id="detailBody"></div>
+    </section>
+
+    <section class="util-window editor" id="editorWin" hidden>
+      <header class="win-chrome">
+        <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h2 id="editorTitle">Add service</h2>
+        <button type="button" class="win-close" data-close="editorWin" aria-label="Close">✕</button>
+      </header>
+      <form class="win-body editor-form" id="editorForm" autocomplete="off"></form>
+    </section>
+
+    <section class="util-window settings" id="settingsWin" hidden>
+      <header class="win-chrome">
+        <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h2>Settings</h2>
+        <button type="button" class="win-close" data-close="settingsWin" aria-label="Close">✕</button>
+      </header>
+      <div class="win-body settings-body">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <button type="button" class="is-active" data-pane="general">General</button>
+          <button type="button" data-pane="notifications">Notifications</button>
+          <button type="button" data-pane="defaults">Defaults</button>
+          <button type="button" data-pane="data">Data</button>
+        </nav>
+        <div class="settings-panes">
+          <section class="settings-pane is-active" data-pane="general">
+            <label class="check-row"><input type="checkbox" id="setLogin" /><span>Launch at login</span></label>
+            <p class="hint">Off until you add a service. Pulse will ask once after the first save.</p>
+            <label class="field">
+              <span>Global hotkey</span>
+              <input type="text" id="setHotkey" value="⌘⇧U" class="mono" />
+            </label>
+            <label class="field">
+              <span>Theme</span>
+              <select id="setTheme">
+                <option value="system">System</option>
+                <option value="dark" selected>Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </label>
+          </section>
+          <section class="settings-pane" data-pane="notifications">
+            <label class="check-row"><input type="checkbox" id="setNotify" checked /><span>Notifications</span></label>
+            <label class="check-row"><input type="checkbox" id="setSound" checked /><span>Play sound</span></label>
+            <fieldset class="quiet-hours">
+              <legend>Quiet hours</legend>
+              <div class="row-2">
+                <label class="field"><span>Start</span><input type="time" id="qhStart" value="22:00" /></label>
+                <label class="field"><span>End</span><input type="time" id="qhEnd" value="08:00" /></label>
+              </div>
+              <div class="day-pills" id="qhDays"></div>
+              <p class="hint">Overnight ranges are valid. Friday 22:00 runs through Saturday 08:00 even if Saturday is unchecked. Tray still turns red; toasts wait for a digest unless Always alert is on.</p>
+            </fieldset>
+          </section>
+          <section class="settings-pane" data-pane="defaults">
+            <label class="field">
+              <span>Default interval</span>
+              <select id="setInterval">
+                <option>15</option><option>30</option><option selected>60</option>
+                <option>120</option><option>300</option><option>600</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Default timeout</span>
+              <select id="setTimeout">
+                <option value="5000">5s</option>
+                <option value="10000" selected>10s</option>
+                <option value="15000">15s</option>
+                <option value="30000">30s</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Fail threshold</span>
+              <input type="number" id="setFail" min="1" max="10" value="3" />
+            </label>
+            <p class="hint">A service is Down only after this many consecutive hard fails. The first fail is Degraded (amber). Default is 3.</p>
+            <p class="hint">If any check succeeds, Pulse assumes the network is up.</p>
+          </section>
+          <section class="settings-pane" data-pane="data">
+            <div class="data-actions">
+              <button type="button" class="btn" id="exportBtn">Export JSON</button>
+              <button type="button" class="btn" id="importBtn">Import…</button>
+            </div>
+            <label class="check-row warn-row"><input type="checkbox" id="exportSecrets" /><span>Include secret values</span></label>
+            <p class="hint danger-text" id="secretWarn" hidden>Anyone with this file can call your endpoints as you. Do not commit it. Do not mail it.</p>
+            <hr />
+            <label class="field">
+              <span>Type RESET to wipe local config, history, and keychain items</span>
+              <input type="text" id="resetInput" class="mono" placeholder="RESET" />
+            </label>
+            <button type="button" class="btn danger" id="resetBtn" disabled>Reset Pulse</button>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <nav class="win-scenes" id="winScenes" aria-label="Preview state">
+      <button type="button" data-scene="empty">Empty</button>
+      <button type="button" data-scene="healthy">Healthy</button>
+      <button type="button" data-scene="incident" class="is-active">Incident</button>
+      <button type="button" class="os-toggle" id="osToggleWin">macOS</button>
+    </nav>
+
+    <div class="taskbar" id="taskbar" hidden>
+      <div class="taskbar-left">
+        <span class="win-start"></span>
+      </div>
+      <div class="taskbar-right">
+        <span class="taskbar-clock" id="winClock">9:41 AM</span>
+        <button type="button" class="tray-hit win-tray" id="winTrayHit" aria-label="Pulse tray">
+          <span class="tray-icon" id="winTrayIcon" data-state="down" data-badge="2">
+            <span class="tray-mark"></span>
+            <span class="tray-badge">2</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>
