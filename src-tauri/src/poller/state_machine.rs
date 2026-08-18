@@ -174,24 +174,17 @@ fn finish(notify: Option<StateNotify>, policy: &NotifyPolicy) -> Transition {
 }
 
 fn decide(emit: Emit, policy: &NotifyPolicy) -> Transition {
-    if policy.notify_enabled() {
-        Transition {
-            applied: true,
-            emit: Some(emit),
-            queue: QueueOp::None,
-        }
-    } else if policy.should_queue() {
-        let queue = match emit {
-            Emit::Down => QueueOp::Enqueue,
-            Emit::Recovered { .. } => QueueOp::Dequeue,
-        };
-        Transition {
-            applied: true,
-            emit: None,
-            queue,
-        }
-    } else {
-        Transition::silent(true)
+    // Recovered always dequeues so a post-window recovery cannot leave a held Down.
+    let queue = match emit {
+        Emit::Down if policy.should_queue() => QueueOp::Enqueue,
+        Emit::Recovered { .. } => QueueOp::Dequeue,
+        _ => QueueOp::None,
+    };
+    let emit = policy.notify_enabled().then_some(emit);
+    Transition {
+        applied: true,
+        emit,
+        queue,
     }
 }
 
@@ -576,7 +569,7 @@ mod tests {
         let rec = apply(&mut runtime, success(), later(60), 3, &policy);
         assert_eq!(runtime.status, MachineStatus::Healthy);
         assert_eq!(rec.emit, None);
-        assert_eq!(rec.queue, QueueOp::None);
+        assert_eq!(rec.queue, QueueOp::Dequeue);
     }
 
     #[test]
@@ -650,6 +643,30 @@ mod tests {
         let down = apply(&mut runtime, hard(), t0(), 3, &policy);
         assert_eq!(down.emit, Some(Emit::Down));
         assert_eq!(down.queue, QueueOp::None);
+    }
+
+    #[test]
+    fn recovery_after_quiet_window_still_dequeues() {
+        let quiet = NotifyPolicy {
+            in_quiet_hours: true,
+            ..NotifyPolicy::default()
+        };
+        let mut runtime = RuntimeState::pending();
+        runtime.status = MachineStatus::Degraded;
+        runtime.consecutive_hard_fails = 2;
+        let down = apply(&mut runtime, hard(), t0(), 3, &quiet);
+        assert_eq!(down.queue, QueueOp::Enqueue);
+        runtime.down_since = Some(t0());
+        let rec = apply(
+            &mut runtime,
+            success(),
+            later(30),
+            3,
+            &NotifyPolicy::default(),
+        );
+        assert_eq!(runtime.status, MachineStatus::Healthy);
+        assert!(matches!(rec.emit, Some(Emit::Recovered { .. })));
+        assert_eq!(rec.queue, QueueOp::Dequeue);
     }
 
     #[test]

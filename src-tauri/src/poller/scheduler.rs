@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -455,39 +455,26 @@ impl Inner {
     }
 
     fn maybe_flush_quiet(&self, now: DateTime<Utc>) {
-        let in_quiet = self
-            .settings
-            .read()
-            .expect("settings lock")
+        let settings = self.settings.read().expect("settings lock").clone();
+        let in_quiet = settings
             .quiet_hours
             .as_ref()
             .is_some_and(|hours| in_quiet_hours(hours, now));
         if in_quiet {
             return;
         }
-        let ids: Vec<String> = self
-            .quiet
-            .lock()
-            .expect("quiet lock")
-            .members()
-            .iter()
-            .map(|entry| entry.service_id.clone())
-            .collect();
-        if ids.is_empty() {
+        if !settings.notifications {
+            self.quiet.lock().expect("quiet lock").retain(|_| false);
             return;
         }
-        let drop: HashSet<String> = {
-            let history = self.history.lock().expect("history lock");
-            ids.into_iter()
-                .filter(|id| match history.load_runtime(id) {
-                    Ok(runtime) => runtime.status != MachineStatus::Down || runtime.is_snoozed(now),
-                    Err(_) => true,
-                })
-                .collect()
-        };
+        // History then quiet — same order as persist+dequeue in run_check.
         let events = {
+            let history = self.history.lock().expect("history lock");
             let mut queue = self.quiet.lock().expect("quiet lock");
-            queue.retain(|entry| !drop.contains(&entry.service_id));
+            queue.retain(|entry| match history.load_runtime(&entry.service_id) {
+                Ok(runtime) => runtime.status == MachineStatus::Down && !runtime.is_snoozed(now),
+                Err(_) => false,
+            });
             flush_quiet_queue(&mut queue)
         };
         if events.is_empty() {
@@ -1074,30 +1061,32 @@ impl Inner {
                 history.put_last_result(&service.id, &result)?;
                 history.insert_sample(&service.id, &sample)?;
             }
+            // Dequeue under the same history lock as persist so flush cannot
+            // snapshot Down after Recovered has already written Healthy.
+            if transition.queue != QueueOp::None {
+                let (title, body) = if matches!(transition.queue, QueueOp::Enqueue) {
+                    (
+                        down_title(&service.name),
+                        down_body(&evidence, service.timeout_ms),
+                    )
+                } else {
+                    (service.name.clone(), String::new())
+                };
+                self.quiet.lock().expect("quiet lock").apply(
+                    transition.queue,
+                    QueuedDown {
+                        service_id: service.id.clone(),
+                        name: service.name.clone(),
+                        title,
+                        body,
+                    },
+                );
+            }
             (transition, result)
         };
 
         if let Some(emit) = transition.emit {
             self.emit_notification(service, &evidence, emit, now);
-        }
-        if transition.queue != QueueOp::None {
-            let (title, body) = if matches!(transition.queue, QueueOp::Enqueue) {
-                (
-                    down_title(&service.name),
-                    down_body(&evidence, service.timeout_ms),
-                )
-            } else {
-                (service.name.clone(), String::new())
-            };
-            self.quiet.lock().expect("quiet lock").apply(
-                transition.queue,
-                QueuedDown {
-                    service_id: service.id.clone(),
-                    name: service.name.clone(),
-                    title,
-                    body,
-                },
-            );
         }
 
         self.checks.fetch_add(1, Ordering::Relaxed);
@@ -2368,5 +2357,50 @@ mod tests {
         let view = handle.view("pay").unwrap();
         assert_eq!(view.snooze_until, Some(until));
         assert_eq!(view.state, UiState::Pending);
+    }
+
+    #[test]
+    fn recovery_after_window_cancels_held_down() {
+        let (_dir, history) = open_history();
+        let a = sample("pay", "https://pay.example/health".into(), 60);
+        let (handle, events) = handle_with_capture(vec![a], history);
+        handle
+            .inner
+            .quiet
+            .lock()
+            .expect("quiet lock")
+            .enter(queued("pay", "Payments"));
+        // Recovered after the window: still in the queue, runtime no longer Down.
+        handle.with_history(|history| {
+            history
+                .put_runtime("pay", &RuntimeState::pending())
+                .unwrap();
+        });
+        handle.inner.maybe_flush_quiet(Utc::now());
+        assert!(events.lock().expect("events").is_empty());
+        assert!(handle.inner.quiet.lock().expect("quiet lock").is_empty());
+    }
+
+    #[test]
+    fn flush_is_noop_when_notifications_disabled() {
+        let (_dir, history) = open_history();
+        let a = sample("pay", "https://pay.example/health".into(), 60);
+        let b = sample("worker", "https://worker.example/health".into(), 60);
+        let (handle, events) = handle_with_capture(vec![a, b], history);
+        handle.with_history(|history| {
+            history.put_runtime("pay", &down_runtime()).unwrap();
+            history.put_runtime("worker", &down_runtime()).unwrap();
+        });
+        {
+            let mut queue = handle.inner.quiet.lock().expect("quiet lock");
+            queue.enter(queued("pay", "Payments"));
+            queue.enter(queued("worker", "Worker"));
+        }
+        handle.update_settings(AppSettings {
+            notifications: false,
+            ..AppSettings::default()
+        });
+        assert!(events.lock().expect("events").is_empty());
+        assert!(handle.inner.quiet.lock().expect("quiet lock").is_empty());
     }
 }

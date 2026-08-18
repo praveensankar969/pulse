@@ -277,7 +277,7 @@ export function inQuietWindow(hours: QuietHours, local: Date): boolean {
   );
 }
 
-/** Friday 22:00 → Saturday 08:00 even if Saturday is unchecked. */
+/** Fixture: Mon–Fri 22:00–08:00 covers Friday night into Saturday morning. */
 export function overnightFridaySaturdayHolds(hours: QuietHours): boolean {
   const cases: Array<[number, number, number, number, number, boolean]> = [
     [2026, 7, 21, 21, 59, false],

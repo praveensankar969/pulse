@@ -30,7 +30,6 @@ const PANES: Array<{ id: Pane; label: string }> = [
 ];
   DEFAULT_QUIET_HOURS,
   inQuietWindow,
-  overnightFridaySaturdayHolds,
   WEEKDAYS,
 } from "../../lib/format";
 import { getSettings, onSettings, updateSettings } from "../../lib/ipc";
@@ -496,7 +495,6 @@ export function SettingsWindow() {
           </section>
         ) : null}
   const active = quietOn && quiet ? inQuietWindow(quiet, new Date(now)) : false;
-  const overnightOk = overnightFridaySaturdayHolds(quiet ?? DEFAULT_QUIET_HOURS);
 
   return (
     <main className="settings" aria-label="Settings">
@@ -590,9 +588,8 @@ export function SettingsWindow() {
               </div>
               <p className="hint">
                 Overnight ranges are valid. Friday 22:00 runs through Saturday
-                08:00 even if Saturday is unchecked
-                {overnightOk ? "" : " — overnight check failed"}. Tray still
-                turns red; toasts wait for a digest unless Always alert is on.
+                08:00 even if Saturday is unchecked. Tray still turns red; toasts
+                wait for a digest unless Always alert is on.
               </p>
               {active ? (
                 <p className="hint">Quiet hours are active now.</p>
