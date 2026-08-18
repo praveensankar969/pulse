@@ -3,5 +3,5 @@
   "identifier": "popover",
   "description": "Glance list. No secret-reveal commands.",
   "windows": ["popover"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-scheduler"]
 }

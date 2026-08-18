@@ -1,0 +1,35 @@
+[[permission]]
+identifier = "allow-list-services"
+description = "List assembled ServiceView rows."
+commands.allow = ["list_services"]
+
+[[permission]]
+identifier = "allow-set-paused"
+description = "Pause or unpause a service."
+commands.allow = ["set_paused"]
+
+[[permission]]
+identifier = "allow-check-now"
+description = "Run one live check. Shares the concurrency semaphore."
+commands.allow = ["check_now"]
+
+[[permission]]
+identifier = "allow-check-all"
+description = "Wake every unpaused service, staggered 50ms."
+commands.allow = ["check_all"]
+
+[[permission]]
+identifier = "allow-delete-service"
+description = "Delete keychain items, history, config row, and abort the poller task."
+commands.allow = ["delete_service"]
+
+[[set]]
+identifier = "allow-scheduler"
+description = "Scheduler controls used by the popover and detail windows."
+permissions = [
+    "allow-list-services",
+    "allow-set-paused",
+    "allow-check-now",
+    "allow-check-all",
+    "allow-delete-service",
+]

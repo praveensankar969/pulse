@@ -4,8 +4,9 @@ use std::path::Path;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use super::history::History;
 use super::migrate::{self, SCHEMA_VERSION};
-use super::secrets::{persist_draft_headers, SecretError, SecretStore};
+use super::secrets::{delete_service_secrets, persist_draft_headers, SecretError, SecretStore};
 use super::Paths;
 use crate::domain::{AppSettings, HeaderSpec, Service, ServiceDraft, ValidationError};
 
@@ -228,6 +229,39 @@ impl ConfigStore {
         }
         self.save_services(&services)?;
         Ok(service)
+    }
+
+    pub fn set_paused(&self, id: &str, paused: bool) -> Result<Service, StoreError> {
+        let mut services = self.load_services()?;
+        let service = services
+            .iter_mut()
+            .find(|service| service.id == id)
+            .ok_or(StoreError::NotFound)?;
+        service.paused = paused;
+        service.updated_at = Utc::now();
+        let out = service.clone();
+        self.save_services(&services)?;
+        Ok(out)
+    }
+
+    /// Secrets → history → services.json. Fail before the JSON rewrite if 2 or 3 fail.
+    pub fn delete_service(
+        &self,
+        secrets: &SecretStore,
+        history: &History,
+        id: &str,
+    ) -> Result<(), StoreError> {
+        let mut services = self.load_services()?;
+        let index = services
+            .iter()
+            .position(|service| service.id == id)
+            .ok_or(StoreError::NotFound)?;
+        let service = services[index].clone();
+        delete_service_secrets(secrets, &service)?;
+        history.delete_service(id)?;
+        services.remove(index);
+        self.save_services(&services)?;
+        Ok(())
     }
 
     pub fn load_config_file(&self) -> Result<ConfigFile, StoreError> {

@@ -4,6 +4,7 @@ mod error;
 mod runtime;
 mod service;
 mod settings;
+pub mod view;
 
 pub use assertion::{
     AssertOp, Assertion, AssertionResult, REASON_INVALID_PATH, REASON_MISSING,

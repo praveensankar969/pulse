@@ -45,11 +45,16 @@ reqwest = { version = "0.12", default-features = false, features = [
     "http2",
     "charset",
 ] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tauri-plugin-log = "2"
+log = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "test-util"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Same major as keyring 3.6's macOS crate so PlatformFailure downcast works.

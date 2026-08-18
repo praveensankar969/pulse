@@ -41,6 +41,14 @@ impl Paths {
         self.root.join("history.sqlite3")
     }
 
+    pub fn logs_dir(&self) -> PathBuf {
+        self.root.join("logs")
+    }
+
+    pub fn log_file(&self) -> PathBuf {
+        self.logs_dir().join("pulse.log")
+    }
+
     pub fn ensure_dir(&self) -> Result<(), StoreError> {
         std::fs::create_dir_all(&self.root)?;
         Ok(())
@@ -66,6 +74,10 @@ mod tests {
         assert_eq!(
             paths.history_file(),
             PathBuf::from("/tmp/dev.pulsebar.app/history.sqlite3")
+        );
+        assert_eq!(
+            paths.log_file(),
+            PathBuf::from("/tmp/dev.pulsebar.app/logs/pulse.log")
         );
     }
 }

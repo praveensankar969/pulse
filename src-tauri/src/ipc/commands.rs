@@ -1,22 +1,26 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{State, WebviewWindow};
 
+use crate::domain::{CheckResult, ServiceView};
+use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::store::secrets::ensure_reveal_window;
 use crate::store::{BeginRevealResponse, ConfigStore, RevealError, RevealRegistry, SecretStore};
 
 pub struct AppState {
     pub store: Mutex<ConfigStore>,
-    pub secrets: SecretStore,
+    pub secrets: Arc<SecretStore>,
     pub reveals: Mutex<RevealRegistry>,
+    pub scheduler: SchedulerHandle,
 }
 
 impl AppState {
-    pub fn new(store: ConfigStore) -> Self {
+    pub fn new(store: ConfigStore, secrets: Arc<SecretStore>, scheduler: SchedulerHandle) -> Self {
         Self {
             store: Mutex::new(store),
-            secrets: SecretStore::new(),
+            secrets,
             reveals: Mutex::new(RevealRegistry::new()),
+            scheduler,
         }
     }
 }
@@ -90,6 +94,51 @@ pub fn end_reveal(
         .lock()
         .expect("reveal registry lock")
         .end(&token);
+    Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn list_services(state: State<'_, AppState>) -> Vec<ServiceView> {
+    state.scheduler.views()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn set_paused(
+    state: State<'_, AppState>,
+    id: String,
+    paused: bool,
+) -> Result<ServiceView, SchedulerError> {
+    state
+        .store
+        .lock()
+        .expect("config store lock")
+        .set_paused(&id, paused)?;
+    state.scheduler.set_paused(&id, paused)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn check_now(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<CheckResult, SchedulerError> {
+    state.scheduler.check_now(&id).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn check_all(state: State<'_, AppState>) -> Result<(), SchedulerError> {
+    state.scheduler.check_all().await;
+    Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn delete_service(state: State<'_, AppState>, id: String) -> Result<(), SchedulerError> {
+    {
+        let store = state.store.lock().expect("config store lock");
+        state
+            .scheduler
+            .with_history(|history| store.delete_service(&state.secrets, history, &id))?;
+    }
+    state.scheduler.remove(&id);
     Ok(())
 }
 

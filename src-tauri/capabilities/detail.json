@@ -3,5 +3,5 @@
   "identifier": "detail",
   "description": "Evidence window. Press-and-hold secret reveal allowed.",
   "windows": ["detail"],
-  "permissions": ["core:default", "allow-reveal"]
+  "permissions": ["core:default", "allow-reveal", "allow-scheduler"]
 }
