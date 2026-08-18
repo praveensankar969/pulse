@@ -37,6 +37,10 @@ impl Paths {
         self.root.join("services.json")
     }
 
+    pub fn history_file(&self) -> PathBuf {
+        self.root.join("history.sqlite3")
+    }
+
     pub fn ensure_dir(&self) -> Result<(), StoreError> {
         std::fs::create_dir_all(&self.root)?;
         Ok(())
@@ -58,6 +62,10 @@ mod tests {
         assert_eq!(
             paths.services_file(),
             PathBuf::from("/tmp/dev.pulsebar.app/services.json")
+        );
+        assert_eq!(
+            paths.history_file(),
+            PathBuf::from("/tmp/dev.pulsebar.app/history.sqlite3")
         );
     }
 }

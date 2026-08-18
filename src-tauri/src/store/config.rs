@@ -19,6 +19,10 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("failed to read or write config: {0}")]
     Io(#[from] std::io::Error),
+    #[error("failed to read or write history: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("corrupt history: {0}")]
+    Corrupt(String),
     #[error("{0}")]
     Path(String),
     #[error("service not found")]
