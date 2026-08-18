@@ -12,5 +12,8 @@
     "allow-scheduler",
     "allow-should-suppress-blur",
     "allow-open-detail"
+    "allow-scheduler",
+    "allow-should-suppress-blur",
+    "notification:default"
   ]
 }

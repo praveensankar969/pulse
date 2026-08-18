@@ -9,6 +9,9 @@ use serde::Serialize;
 use tauri::{State, WebviewWindow};
 
 use crate::domain::{CheckResult, CompactSample, ServiceView};
+
+use crate::domain::{CheckResult, ServiceDraft, ServiceView};
+use crate::notify::request_permission_on_notify_save;
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
@@ -117,6 +120,27 @@ pub fn end_reveal(
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_services(state: State<'_, AppState>) -> Vec<ServiceView> {
     state.scheduler.views()
+}
+
+/// Persist a draft, start polling, and prompt for notification permission
+/// on the first save of a service with `notify: true` (not at launch).
+#[tauri::command(rename_all = "camelCase")]
+pub fn save_service(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    draft: ServiceDraft,
+) -> Result<ServiceView, SchedulerError> {
+    let notify = draft.notify;
+    let service = state
+        .store
+        .lock()
+        .expect("config store lock")
+        .save_service(&state.secrets, draft)?;
+    state.scheduler.upsert(service.clone());
+    if notify {
+        request_permission_on_notify_save(&app);
+    }
+    state.scheduler.view(&service.id)
 }
 
 #[tauri::command(rename_all = "camelCase")]

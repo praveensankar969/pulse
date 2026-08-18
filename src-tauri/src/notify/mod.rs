@@ -1,4 +1,5 @@
 mod copy;
+pub mod os;
 mod quiet;
 
 pub use copy::{
@@ -8,12 +9,17 @@ pub use copy::{
 pub use quiet::{
     flush_quiet_queue, in_quiet_hours, in_quiet_window, QueueOp, QueuedDown, QuietQueue,
 };
+pub use os::{
+    handle_activation, last_notified_service_id, parse_focus_args,
+    request_permission_on_notify_save, NotifyHub, OsNotifier, FOCUS_LAUNCH,
+};
+pub use quiet::{in_quiet_hours, in_quiet_window, QueueOp, QueuedDown, QuietQueue};
 
 use chrono::{DateTime, Utc};
 
 use crate::domain::{CheckEvidence, RuntimeState};
 
-/// Headless sink. PR 14 wires OS toasts; this PR does not.
+/// Headless sink. `OsNotifier` is the desktop implementation.
 pub trait Notifier {
     fn notify(&mut self, notification: Notification);
 }

@@ -10,5 +10,7 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-set-title"
+    "allow-save-service",
+    "notification:default"
   ]
 }

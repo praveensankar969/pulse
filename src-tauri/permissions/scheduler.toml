@@ -56,6 +56,9 @@ commands.allow = ["open_action"]
 identifier = "allow-open-detail"
 description = "Create or focus the detail window and hide the popover."
 commands.allow = ["open_detail"]
+identifier = "allow-save-service"
+description = "Persist a service draft and request notification permission on first notify-enabled save."
+commands.allow = ["save_service"]
 
 [[set]]
 identifier = "allow-scheduler"

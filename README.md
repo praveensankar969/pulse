@@ -86,3 +86,8 @@ Settings → “Check for updates” is not built yet (no Settings window).
 ### Icons
 
 App icons are a simple filled circle (not emoji). Tray status marks (green / amber / red / hollow / slash) are a later change and are not these bundle icons.
+## Notifications
+
+OS toasts fire once on down and once on recovery. Sound is best-effort (`settings.sound`). Permission is requested on the first successful save of a service with `notify: true`, not at launch.
+
+**Windows click cannot be QA’d in `tauri dev`.** The plugin shows a PowerShell name/icon in development, and toast click is not a product-quality test. Click-to-open-popover (AUMID / `pulse:focus?id=`) is only claimed on an installed NSIS build. Do not cite plugin “actions” — that API is mobile-only.
