@@ -954,17 +954,23 @@ impl Inner {
             ProbeEvent::Applied(outcome_of(&evidence))
         };
 
+        // Snapshot slots / offline before history. Every other path is
+        // slots-then-history (views, sleep, wake, stamp_offline_enter).
+        let ids = self.all_ids();
+        let snaps = if matches!(offline_change, OfflineTransition::Exited { .. }) {
+            self.offline
+                .lock()
+                .expect("offline lock")
+                .take_enter_adjusts()
+        } else {
+            HashMap::new()
+        };
         // Fold + load + on_result + persist under one lock so peers cannot
         // overwrite the offline adjust with a stale pre-fold snapshot.
         let (transition, result) = {
             let history = self.history.lock().expect("history lock");
             if let OfflineTransition::Exited { entered_at } = offline_change {
-                let snaps = self
-                    .offline
-                    .lock()
-                    .expect("offline lock")
-                    .take_enter_adjusts();
-                Self::apply_offline_clock(&history, &snaps, &self.all_ids(), entered_at, now);
+                Self::apply_offline_clock(&history, &snaps, &ids, entered_at, now);
             }
             let mut runtime = history
                 .load_runtime(&service.id)
