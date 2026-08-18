@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use super::ValidationError;
 
+pub const REASON_MISSING: &str = "missing";
+pub const REASON_NOT_NUMERIC: &str = "not numeric";
+pub const REASON_NOT_CONTAINABLE: &str = "not containable";
+pub const REASON_INVALID_PATH: &str = "invalid_path";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AssertOp {
@@ -55,5 +60,12 @@ impl Assertion {
             }
         }
         Ok(())
+    }
+}
+
+impl AssertionResult {
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.path = path.into();
+        self
     }
 }

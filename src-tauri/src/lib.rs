@@ -1,5 +1,6 @@
 pub mod domain;
 pub mod ipc;
+pub mod eval;
 pub mod store;
 
 use tauri::Manager;

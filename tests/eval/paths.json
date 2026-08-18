@@ -1,0 +1,47 @@
+{
+  "parse": [
+    { "path": "$", "ok": true },
+    { "path": "status", "ok": true },
+    { "path": "$.status", "ok": true },
+    { "path": "$.data.healthy", "ok": true },
+    { "path": "items.0.id", "ok": true },
+    { "path": "items[0].id", "ok": true },
+    { "path": "[\"error-code\"]", "ok": true },
+    { "path": "$[\"error-code\"]", "ok": true },
+    { "path": "errors.length", "ok": true },
+    { "path": "items[\"0\"].id", "ok": true },
+    { "path": "error-code", "ok": false },
+    { "path": "content-type", "ok": false },
+    { "path": "", "ok": false },
+    { "path": "$.", "ok": false },
+    { "path": "$status", "ok": false },
+    { "path": ".status", "ok": false }
+  ],
+  "root": {
+    "status": "ok",
+    "data": { "healthy": true },
+    "items": [{ "id": 7 }, { "id": 8 }],
+    "errors": [],
+    "error-code": 42,
+    "name": "ab",
+    "meta": { "length": 9 },
+    "map0": { "0": { "id": "keyed" } }
+  },
+  "resolve": [
+    { "path": "status", "value": "ok" },
+    { "path": "$.status", "value": "ok" },
+    { "path": "$.data.healthy", "value": true },
+    { "path": "items.0.id", "value": 7 },
+    { "path": "items[0].id", "value": 7 },
+    { "path": "[\"error-code\"]", "value": 42 },
+    { "path": "$[\"error-code\"]", "value": 42 },
+    { "path": "errors.length", "value": 0 },
+    { "path": "name.length", "value": 2 },
+    { "path": "meta.length", "value": 9 },
+    { "path": "meta[\"length\"]", "value": 9 },
+    { "path": "map0[\"0\"].id", "value": "keyed" },
+    { "path": "error-code", "error": "invalid_path" },
+    { "path": "items.9.id", "error": "missing" },
+    { "path": "errors[\"length\"]", "error": "missing" }
+  ]
+}

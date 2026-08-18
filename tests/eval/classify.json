@@ -1,0 +1,213 @@
+[
+  {
+    "name": "timeout",
+    "transport": "timeout",
+    "timeoutMs": 10000,
+    "outcome": "hard",
+    "errorKind": "timeout",
+    "error": "Timed out after 10s"
+  },
+  {
+    "name": "dns",
+    "transport": "dns",
+    "outcome": "hard",
+    "errorKind": "dns",
+    "error": "Couldn't resolve host"
+  },
+  {
+    "name": "tls_untrusted",
+    "transport": "tls_untrusted",
+    "outcome": "hard",
+    "errorKind": "tls_untrusted",
+    "error": "TLS: certificate untrusted"
+  },
+  {
+    "name": "tls_expired",
+    "transport": "tls_expired",
+    "outcome": "hard",
+    "errorKind": "tls_expired",
+    "error": "TLS: certificate expired"
+  },
+  {
+    "name": "tls_hostname",
+    "transport": "tls_hostname",
+    "outcome": "hard",
+    "errorKind": "tls_hostname",
+    "error": "TLS: hostname mismatch"
+  },
+  {
+    "name": "tls_other",
+    "transport": "tls_other",
+    "outcome": "hard",
+    "errorKind": "tls_other",
+    "error": "TLS handshake failed"
+  },
+  {
+    "name": "refused",
+    "transport": "refused",
+    "outcome": "hard",
+    "errorKind": "refused",
+    "error": "Connection refused"
+  },
+  {
+    "name": "reset",
+    "transport": "reset",
+    "outcome": "hard",
+    "errorKind": "reset",
+    "error": "Connection reset"
+  },
+  {
+    "name": "unreachable",
+    "transport": "unreachable",
+    "outcome": "hard",
+    "errorKind": "unreachable",
+    "error": "Network unreachable"
+  },
+  {
+    "name": "too_many_redirects",
+    "transport": "too_many_redirects",
+    "outcome": "hard",
+    "errorKind": "too_many_redirects",
+    "error": "Too many redirects"
+  },
+  {
+    "name": "redirect_downgrade",
+    "transport": "redirect_downgrade",
+    "outcome": "hard",
+    "errorKind": "redirect_downgrade",
+    "error": "Redirect would drop HTTPS"
+  },
+  {
+    "name": "5xx not expected",
+    "response": { "status": 503, "latencyMs": 20, "body": { "status": "ok" } },
+    "outcome": "hard",
+    "errorKind": "unexpected_status",
+    "error": "HTTP 503"
+  },
+  {
+    "name": "4xx not expected",
+    "response": { "status": 404, "latencyMs": 20, "body": { "error": "missing" } },
+    "outcome": "hard",
+    "errorKind": "unexpected_status",
+    "error": "HTTP 404"
+  },
+  {
+    "name": "3xx after following, final not expected",
+    "response": { "status": 302, "latencyMs": 20, "redirects": 1 },
+    "outcome": "hard",
+    "errorKind": "unexpected_status",
+    "error": "HTTP 302"
+  },
+  {
+    "name": "first-hop 3xx followRedirects false, code not expected",
+    "followRedirects": false,
+    "response": { "status": 302, "latencyMs": 15, "redirects": 0 },
+    "outcome": "hard",
+    "errorKind": "unexpected_status",
+    "error": "HTTP 302"
+  },
+  {
+    "name": "first-hop 3xx followRedirects false, code is expected",
+    "followRedirects": false,
+    "expectedStatus": 302,
+    "response": { "status": 302, "latencyMs": 15, "redirects": 0 },
+    "outcome": "ok"
+  },
+  {
+    "name": "expected status miss",
+    "expectedStatus": 201,
+    "response": { "status": 200, "latencyMs": 20, "body": { "ok": true } },
+    "outcome": "hard",
+    "errorKind": "unexpected_status",
+    "error": "HTTP 200"
+  },
+  {
+    "name": "2xx body not JSON with assertions",
+    "assertions": [{ "path": "status", "op": "equals", "value": "ok" }],
+    "response": { "status": 200, "latencyMs": 20, "bodyText": "not-json" },
+    "outcome": "hard",
+    "errorKind": "body_parse",
+    "error": "Response is not JSON"
+  },
+  {
+    "name": "2xx assertion miss",
+    "assertions": [{ "path": "status", "op": "equals", "value": "ok" }],
+    "response": { "status": 200, "latencyMs": 20, "body": { "status": "unhealthy" } },
+    "outcome": "hard",
+    "errorKind": "assertion",
+    "error": "status expected ok, got unhealthy"
+  },
+  {
+    "name": "2xx assertions pass but slow",
+    "assertions": [{ "path": "status", "op": "equals", "value": "ok" }],
+    "maxLatencyMs": 800,
+    "response": { "status": 200, "latencyMs": 900, "body": { "status": "ok" } },
+    "outcome": "soft",
+    "errorKind": "slow",
+    "error": "900ms (limit 800ms)"
+  },
+  {
+    "name": "2xx assertions pass no SLO miss",
+    "assertions": [
+      { "path": "status", "op": "equals", "value": "ok" },
+      { "path": "errors.length", "op": "equals", "value": 0 }
+    ],
+    "maxLatencyMs": 800,
+    "response": { "status": 200, "latencyMs": 42, "body": { "status": "ok", "errors": [] } },
+    "outcome": "ok"
+  },
+  {
+    "name": "HEAD skips assertions",
+    "method": "HEAD",
+    "assertions": [{ "path": "status", "op": "equals", "value": "ok" }],
+    "response": { "status": 200, "latencyMs": 20 },
+    "outcome": "ok",
+    "assertionSkipped": "head",
+    "errorUnset": true
+  },
+  {
+    "name": "204 with assertions is body_parse",
+    "assertions": [{ "path": "status", "op": "equals", "value": "ok" }],
+    "response": { "status": 204, "latencyMs": 20 },
+    "outcome": "hard",
+    "errorKind": "body_parse",
+    "error": "Response is not JSON"
+  },
+  {
+    "name": "assertion miss is hard even when slow",
+    "assertions": [{ "path": "status", "op": "equals", "value": "ok" }],
+    "maxLatencyMs": 50,
+    "response": { "status": 200, "latencyMs": 900, "body": { "status": "unhealthy" } },
+    "outcome": "hard",
+    "errorKind": "assertion"
+  },
+  {
+    "name": "empty array equals []",
+    "assertions": [{ "path": "errors", "op": "equals", "value": [] }],
+    "response": { "status": 200, "latencyMs": 20, "body": { "errors": [] } },
+    "outcome": "ok"
+  },
+  {
+    "name": "204 without assertions is ok",
+    "response": { "status": 204, "latencyMs": 20 },
+    "outcome": "ok"
+  },
+  {
+    "name": "missing_secret",
+    "transport": "missing_secret",
+    "transportDetail": "Authorization",
+    "outcome": "hard",
+    "errorKind": "missing_secret",
+    "error": "Secret header Authorization is not set"
+  },
+  {
+    "name": "HEAD slow still soft, no error look-alike skip",
+    "method": "HEAD",
+    "assertions": [{ "path": "status", "op": "equals", "value": "ok" }],
+    "maxLatencyMs": 50,
+    "response": { "status": 200, "latencyMs": 80 },
+    "outcome": "soft",
+    "errorKind": "slow",
+    "assertionSkipped": "head"
+  }
+]

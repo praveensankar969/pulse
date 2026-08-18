@@ -5,12 +5,15 @@ mod runtime;
 mod service;
 mod settings;
 
-pub use assertion::{AssertOp, Assertion, AssertionResult};
+pub use assertion::{
+    AssertOp, Assertion, AssertionResult, REASON_INVALID_PATH, REASON_MISSING,
+    REASON_NOT_CONTAINABLE, REASON_NOT_NUMERIC,
+};
 pub use check::{
     AssertionSkipped, CheckEvidence, CheckResult, CompactSample, OutcomeClass, ServiceStatus,
     SparklinePoint, UiState,
 };
-pub use error::{ErrorKind, ValidationError};
+pub use error::{ErrorKind, MessageArgs, ValidationError};
 pub use runtime::{MachineStatus, RuntimeState};
 pub use service::{
     is_mask, is_redacted_header, DraftHeader, ExpectedStatus, Header, HeaderSpec, HttpMethod,
