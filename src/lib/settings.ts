@@ -20,3 +20,11 @@ export function resolvedHotkey(hotkey?: string): string {
   const trimmed = hotkey?.trim();
   return trimmed ? trimmed : DEFAULT_HOTKEY;
 }
+
+/** Commit a fail-threshold draft. Returns null when the field is not an integer. */
+export function commitFailThreshold(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^-?\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Math.min(10, Math.max(1, parsed));
+}

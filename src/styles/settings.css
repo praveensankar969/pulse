@@ -166,8 +166,8 @@ hr {
   cursor: pointer;
 }
 
-.btn:hover:not(:disabled) {
-  background: #262c38;
+.btn:hover:not(:disabled):not(.primary) {
+  background: color-mix(in srgb, var(--bg-2) 70%, var(--text-0) 10%);
 }
 
 .btn:disabled {
@@ -185,6 +185,11 @@ hr {
   border-color: transparent;
   color: #0b1220;
   font-weight: 600;
+}
+
+.btn.primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  background: var(--accent);
 }
 
 .btn.danger {

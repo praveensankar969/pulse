@@ -14,4 +14,6 @@
     "notification:default"
   ]
   "permissions": ["core:default", "allow-reveal", "allow-save-service"]
+    "allow-maybe-ask-launch-at-login"
+  ]
 }

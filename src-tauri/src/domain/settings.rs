@@ -151,7 +151,7 @@ pub enum LaunchPromptAction {
     Ask,
 }
 
-/// One prompt after first save. Checking the box yourself counts as the answer.
+/// One prompt after the first service is saved. Checking the box yourself counts as the answer.
 pub fn launch_prompt_action(settings: &AppSettings) -> LaunchPromptAction {
     if settings.asked_launch_at_login {
         LaunchPromptAction::Skip

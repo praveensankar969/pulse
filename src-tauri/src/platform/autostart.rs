@@ -1,6 +1,7 @@
 //! Launch-at-login, first-save prompt, global hotkey, on-demand settings window.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -12,6 +13,8 @@ pub const SETTINGS_WIDTH: f64 = 440.0;
 pub const SETTINGS_HEIGHT: f64 = 560.0;
 
 static PENDING_LAUNCH_PROMPT: AtomicBool = AtomicBool::new(false);
+static LAST_HOTKEY: Mutex<Option<String>> = Mutex::new(None);
+static ON_SERVICE_CREATED: Mutex<Option<Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
 
 pub fn take_pending_launch_prompt() -> bool {
     PENDING_LAUNCH_PROMPT.swap(false, Ordering::SeqCst)
@@ -38,6 +41,19 @@ pub fn apply_launch_at_login<R: tauri::Runtime>(app: &AppHandle<R>, enabled: boo
 #[cfg(not(desktop))]
 pub fn apply_launch_at_login<R: tauri::Runtime>(_app: &AppHandle<R>, _enabled: bool) {}
 
+/// If bind fails, keep `previous` registered instead of dropping the shortcut.
+pub fn commit_hotkey(
+    previous: Option<String>,
+    candidate: String,
+    registered: bool,
+) -> Option<String> {
+    if registered {
+        Some(candidate)
+    } else {
+        previous
+    }
+}
+
 #[cfg(desktop)]
 pub fn apply_hotkey<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -51,17 +67,35 @@ pub fn apply_hotkey<R: tauri::Runtime>(
         .map_err(|error| format!("invalid hotkey `{hotkey}`: {error}"))?;
 
     let shortcuts = app.global_shortcut();
+    let previous = LAST_HOTKEY.lock().expect("hotkey lock").clone();
     if let Err(error) = shortcuts.unregister_all() {
         tracing::debug!(%error, "hotkey unregister_all");
     }
-    shortcuts
-        .on_shortcut(parsed, |app, _shortcut, event| {
+
+    let register = |binding: Shortcut| {
+        shortcuts.on_shortcut(binding, |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 crate::platform::tray::toggle_popover(app);
             }
         })
-        .map_err(|error| error.to_string())?;
-    Ok(())
+    };
+
+    match register(parsed) {
+        Ok(()) => {
+            *LAST_HOTKEY.lock().expect("hotkey lock") = commit_hotkey(previous, hotkey, true);
+            Ok(())
+        }
+        Err(error) => {
+            let restored = previous.clone().and_then(|prev| {
+                prev.parse::<Shortcut>()
+                    .ok()
+                    .and_then(|binding| register(binding).ok().map(|_| prev))
+            });
+            *LAST_HOTKEY.lock().expect("hotkey lock") =
+                commit_hotkey(restored, hotkey, false);
+            Err(error.to_string())
+        }
+    }
 }
 
 #[cfg(not(desktop))]
@@ -89,16 +123,27 @@ pub fn persist_side_effects<R: tauri::Runtime>(
     app: &AppHandle<R>,
     settings: &AppSettings,
 ) -> Result<(), String> {
-    validate_hotkey(settings)?;
     apply_launch_at_login(app, settings.launch_at_login);
-    if let Err(error) = apply_hotkey(app, settings) {
-        tracing::warn!(%error, "hotkey apply failed");
-    }
     if let Some(state) = app.try_state::<crate::ipc::AppState>() {
         state.scheduler.update_settings(settings.clone());
     }
     let _ = app.emit("pulse://settings", settings);
     Ok(())
+}
+
+/// Rust-side hook from `ConfigStore::save_service` on first create.
+/// Spawned so we never re-enter `AppState.store` under the caller's lock.
+pub fn notify_service_created() {
+    let callback = ON_SERVICE_CREATED
+        .lock()
+        .expect("create hook lock")
+        .clone();
+    let Some(callback) = callback else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        callback();
+    });
 }
 
 pub fn maybe_ask_after_save<R: tauri::Runtime>(
@@ -189,6 +234,24 @@ pub fn install<R: tauri::Runtime>(app: &AppHandle<R>, settings: &AppSettings) {
     let _ = app.listen("pulse://open-settings", move |_| {
         open_settings(&handle);
     });
+
+    let created = app.clone();
+    *ON_SERVICE_CREATED.lock().expect("create hook lock") = Some(Arc::new(move || {
+        let Some(state) = created.try_state::<crate::ipc::AppState>() else {
+            return;
+        };
+        let Ok(settings) = state
+            .store
+            .lock()
+            .expect("config store lock")
+            .load_settings()
+        else {
+            return;
+        };
+        if maybe_ask_after_save(&created, &settings) {
+            open_settings(&created);
+        }
+    }));
 }
 
 #[cfg(test)]
@@ -218,5 +281,22 @@ mod tests {
             ..AppSettings::default()
         })
         .unwrap();
+    }
+
+    #[test]
+    fn failed_register_keeps_last_good_hotkey() {
+        assert_eq!(
+            commit_hotkey(Some("CommandOrControl+Shift+U".into()), "bad".into(), false),
+            Some("CommandOrControl+Shift+U".into())
+        );
+        assert_eq!(
+            commit_hotkey(Some("old".into()), "CommandOrControl+Shift+P".into(), true),
+            Some("CommandOrControl+Shift+P".into())
+        );
+    }
+
+    #[test]
+    fn notify_service_created_is_noop_without_install() {
+        notify_service_created();
     }
 }

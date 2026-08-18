@@ -9,6 +9,7 @@ import {
   updateSettings,
 } from "../../lib/ipc";
 import {
+  commitFailThreshold as clampFailThreshold,
   DEFAULT_QUIET_HOURS,
   INTERVAL_OPTIONS,
   MIXED_REACHABILITY_HELP,
@@ -44,6 +45,7 @@ export function SettingsWindow() {
   const [error, setError] = useState<string | null>(null);
   const [includeSecrets, setIncludeSecrets] = useState(false);
   const [resetTyped, setResetTyped] = useState("");
+  const [failDraft, setFailDraft] = useState("3");
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -51,6 +53,7 @@ export function SettingsWindow() {
       try {
         const loaded = await getSettings();
         setSettings(loaded);
+        setFailDraft(String(loaded.failThreshold));
         applyTheme(loaded.theme);
         if (await pendingLaunchPrompt()) setAskLaunch(true);
       } catch (cause) {
@@ -61,6 +64,7 @@ export function SettingsWindow() {
         unlisten.push(
           await onSettings((next) => {
             setSettings(next);
+            setFailDraft(String(next.failThreshold));
             applyTheme(next.theme);
           }),
         );
@@ -83,6 +87,10 @@ export function SettingsWindow() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
+      if (askLaunch) {
+        void answerLaunch(false);
+        return;
+      }
       try {
         void getCurrentWindow().close();
       } catch {
@@ -91,17 +99,36 @@ export function SettingsWindow() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [askLaunch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    try {
+      void getCurrentWindow()
+        .onCloseRequested(() => {
+          if (askLaunch) void answerLaunch(false);
+        })
+        .then((stop) => {
+          if (cancelled) stop();
+          else unlisten = stop;
+        });
+    } catch {
+      // Browser/vite-only.
+    }
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [askLaunch]);
 
   async function persist(next: AppSettings): Promise<void> {
     setError(null);
     try {
       const saved = await updateSettings(next);
       setSettings(saved);
+      setFailDraft(String(saved.failThreshold));
       applyTheme(saved.theme);
-      if (!saved.askedLaunchAtLogin && !saved.launchAtLogin) {
-        setAskLaunch(true);
-      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -117,8 +144,22 @@ export function SettingsWindow() {
     try {
       const saved = await answerLaunchPrompt(enable);
       setSettings(saved);
+      setFailDraft(String(saved.failThreshold));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  function commitFailThreshold(): void {
+    if (!settings) return;
+    const clamped = clampFailThreshold(failDraft);
+    if (clamped === null) {
+      setFailDraft(String(settings.failThreshold));
+      return;
+    }
+    setFailDraft(String(clamped));
+    if (clamped !== settings.failThreshold) {
+      void patch({ failThreshold: clamped });
     }
   }
 
@@ -362,10 +403,10 @@ export function SettingsWindow() {
                 type="number"
                 min={1}
                 max={10}
-                value={settings.failThreshold}
-                onChange={(event) =>
-                  void patch({ failThreshold: Number(event.target.value) })
-                }
+                step={1}
+                value={failDraft}
+                onChange={(event) => setFailDraft(event.target.value)}
+                onBlur={() => commitFailThreshold()}
               />
             </label>
             <p className="hint">
@@ -418,7 +459,8 @@ export function SettingsWindow() {
             <button
               type="button"
               className="btn danger"
-              disabled={resetTyped !== "RESET"}
+              disabled
+              title="Reset lands in a later update."
             >
               Reset Pulse
             </button>

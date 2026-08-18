@@ -159,6 +159,7 @@ struct Inner {
     offline: bool,
     poller_dead: bool,
     views: Vec<ServiceView>,
+    last_rect: Option<tauri::Rect>,
     apply_icon: Option<Arc<dyn Fn(TrayMark) + Send + Sync>>,
 }
 
@@ -176,6 +177,7 @@ impl TrayHandle {
                 offline: false,
                 poller_dead: false,
                 views: Vec::new(),
+                last_rect: None,
                 apply_icon: None,
             })),
         }
@@ -208,6 +210,17 @@ impl TrayHandle {
             .expect("tray lock")
             .protocol
             .should_suppress_blur(Instant::now())
+    }
+
+    pub fn remember_rect(&self, rect: &tauri::Rect) {
+        if rect_is_overflow(rect) {
+            return;
+        }
+        self.inner.lock().expect("tray lock").last_rect = Some(*rect);
+    }
+
+    pub fn last_rect(&self) -> Option<tauri::Rect> {
+        self.inner.lock().expect("tray lock").last_rect
     }
 
     fn bind_icon(&self, apply: Arc<dyn Fn(TrayMark) + Send + Sync>) {
@@ -383,8 +396,12 @@ fn handle_tray_event<R: tauri::Runtime>(
         MouseButton::Middle => return,
     };
     match button_state {
-        MouseButtonState::Down => tray.on_down(click),
+        MouseButtonState::Down => {
+            tray.remember_rect(&rect);
+            tray.on_down(click);
+        }
         MouseButtonState::Up => {
+            tray.remember_rect(&rect);
             // tray-icon 0.24 drops the whole Click when GetRect fails (overflow).
             let overflow = rect_is_overflow(&rect);
             match tray.on_up(click, overflow) {
@@ -408,9 +425,10 @@ pub fn show_popover_if_hidden<R: tauri::Runtime>(app: &AppHandle<R>) {
     apply_visibility(app, None, true);
 }
 
-/// Global hotkey: same toggle as a tray click without a status-item rect.
+/// Global hotkey: same placement as a left click when we have a tray rect.
 pub fn toggle_popover<R: tauri::Runtime>(app: &AppHandle<R>) {
-    apply_visibility(app, None, false);
+    let rect = app.try_state::<TrayHandle>().and_then(|tray| tray.last_rect());
+    apply_visibility(app, rect.as_ref(), false);
 }
 
 fn apply_visibility<R: tauri::Runtime>(
@@ -921,6 +939,30 @@ mod tests {
         let down = paint_mark(TrayMark::Down { count: 2 }, 36, 18.0);
         let healthy = paint_mark(TrayMark::Healthy, 36, 18.0);
         assert_ne!(down, healthy);
+    }
+
+    #[test]
+    fn remembers_non_overflow_tray_rect() {
+        let tray = TrayHandle::new();
+        assert!(tray.last_rect().is_none());
+        let overflow = tauri::Rect {
+            position: Position::Physical(PhysicalPosition::new(0, 0)),
+            size: Size::Physical(tauri::PhysicalSize::new(0, 0)),
+        };
+        tray.remember_rect(&overflow);
+        assert!(tray.last_rect().is_none());
+        let rect = tauri::Rect {
+            position: Position::Physical(PhysicalPosition::new(10, 20)),
+            size: Size::Physical(tauri::PhysicalSize::new(18, 18)),
+        };
+        tray.remember_rect(&rect);
+        match tray.last_rect().expect("stored").position {
+            Position::Physical(pos) => {
+                assert_eq!(pos.x, 10);
+                assert_eq!(pos.y, 20);
+            }
+            other => panic!("expected physical, got {other:?}"),
+        }
     }
 
     #[test]

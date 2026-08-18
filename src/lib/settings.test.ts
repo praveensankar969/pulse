@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  commitFailThreshold,
   DEFAULT_HOTKEY,
   DEFAULT_QUIET_HOURS,
   MIXED_REACHABILITY_HELP,
@@ -21,6 +22,16 @@ describe("settings constants", () => {
     expect(resolvedHotkey("CommandOrControl+Shift+P")).toBe(
       "CommandOrControl+Shift+P",
     );
+  });
+
+  it("commits fail threshold on blur only after a valid integer", () => {
+    expect(commitFailThreshold("3")).toBe(3);
+    expect(commitFailThreshold("10")).toBe(10);
+    expect(commitFailThreshold("1")).toBe(1);
+    expect(commitFailThreshold("0")).toBe(1);
+    expect(commitFailThreshold("11")).toBe(10);
+    expect(commitFailThreshold("")).toBeNull();
+    expect(commitFailThreshold("1.5")).toBeNull();
   });
 
   it("defaults quiet hours to weekdays overnight", () => {

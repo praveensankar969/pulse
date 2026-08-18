@@ -223,11 +223,15 @@ impl ConfigStore {
         let headers = persist_draft_headers(secrets, &id, &draft.headers, &previous_secret_keys)?;
         let service = Service { headers, ..preview };
 
+        let created = index.is_none();
         match index {
             Some(index) => services[index] = service.clone(),
             None => services.push(service.clone()),
         }
         self.save_services(&services)?;
+        if created && services.len() == 1 {
+            crate::platform::autostart::notify_service_created();
+        }
         Ok(service)
     }
 

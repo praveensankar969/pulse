@@ -316,6 +316,8 @@ pub fn update_settings(
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
     crate::platform::autostart::validate_hotkey(&settings)?;
+    // Register before disk write so a failed bind keeps the last-good shortcut.
+    crate::platform::autostart::apply_hotkey(&app, &settings)?;
     let mut settings = settings;
     if settings.launch_at_login {
         settings.asked_launch_at_login = true;
@@ -327,13 +329,7 @@ pub fn update_settings(
         .save_settings(&settings)
         .map_err(|error| error.to_string())?;
     crate::platform::autostart::persist_side_effects(&app, &settings)?;
-    crate::platform::autostart::maybe_ask_after_save(&app, &settings);
-    state
-        .store
-        .lock()
-        .expect("config store lock")
-        .load_settings()
-        .map_err(|error| error.to_string())
+    Ok(settings)
 }
 
 #[tauri::command]
