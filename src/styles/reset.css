@@ -31,6 +31,10 @@ button {
 }
 
 h1,
-p {
+h2,
+h3,
+p,
+dl,
+dd {
   margin: 0;
 }

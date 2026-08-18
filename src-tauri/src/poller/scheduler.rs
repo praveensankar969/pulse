@@ -96,6 +96,10 @@ pub enum SchedulerError {
     NotFound,
     #[error("check canceled")]
     Canceled,
+    #[error("invalid snooze timestamp")]
+    InvalidSnooze,
+    #[error("could not open URL")]
+    Open,
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -296,6 +300,16 @@ impl SchedulerHandle {
 
     pub fn set_paused(&self, id: &str, paused: bool) -> Result<ServiceView, SchedulerError> {
         self.inner.set_paused(id, paused)?;
+        self.inner.mark_dirty();
+        self.view(id)
+    }
+
+    pub fn set_snooze(
+        &self,
+        id: &str,
+        until: Option<DateTime<Utc>>,
+    ) -> Result<ServiceView, SchedulerError> {
+        self.inner.set_snooze(id, until)?;
         self.inner.mark_dirty();
         self.view(id)
     }
@@ -756,6 +770,17 @@ impl Inner {
             let delay = self.stagger_for(id);
             self.spawn_service(id.to_string(), delay);
         }
+        Ok(())
+    }
+
+    fn set_snooze(&self, id: &str, until: Option<DateTime<Utc>>) -> Result<(), SchedulerError> {
+        if self.clone_service(id).is_none() {
+            return Err(SchedulerError::NotFound);
+        }
+        self.history
+            .lock()
+            .expect("history lock")
+            .set_snooze(id, until)?;
         Ok(())
     }
 

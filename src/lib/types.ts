@@ -150,6 +150,12 @@ export interface CompactSample {
   errorKind?: ErrorKind;
 }
 
+export interface DetailPayload {
+  view: ServiceView;
+  last: CheckResult | null;
+  samples24h: CompactSample[];
+}
+
 export interface QuietHours {
   start: string; // "HH:MM" 24h local
   end: string;

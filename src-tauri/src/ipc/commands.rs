@@ -4,10 +4,23 @@ use tauri::{AppHandle, State, WebviewWindow};
 
 use crate::domain::{AppSettings, CheckEvidence, CheckResult, ServiceDraft, ServiceView};
 use crate::ipc::draft::run_test_draft;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use tauri::{State, WebviewWindow};
+
+use crate::domain::{CheckResult, CompactSample, ServiceView};
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
 use crate::store::{BeginRevealResponse, ConfigStore, RevealError, RevealRegistry, SecretStore};
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetailPayload {
+    pub view: ServiceView,
+    pub last: Option<CheckResult>,
+    pub samples24h: Vec<CompactSample>,
+}
 
 pub struct AppState {
     pub store: Mutex<ConfigStore>,
@@ -177,6 +190,75 @@ pub async fn check_all(state: State<'_, AppState>) -> Result<(), SchedulerError>
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub fn get_detail(state: State<'_, AppState>, id: String) -> Result<DetailPayload, SchedulerError> {
+    let view = state.scheduler.view(&id)?;
+    let last = view.last_result.clone();
+    let samples24h = state
+        .scheduler
+        .with_history(|history| history.samples_24h(&id, Utc::now()))?;
+    Ok(DetailPayload {
+        view,
+        last,
+        samples24h,
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn snooze(
+    state: State<'_, AppState>,
+    id: String,
+    until: Option<String>,
+) -> Result<ServiceView, SchedulerError> {
+    let until = parse_snooze_until(until)?;
+    state.scheduler.set_snooze(&id, until)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn open_action(state: State<'_, AppState>, id: String) -> Result<(), SchedulerError> {
+    let view = state.scheduler.view(&id)?;
+    let url = view
+        .service
+        .action_url
+        .as_deref()
+        .unwrap_or(view.service.url.as_str());
+    open_url(url)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn open_detail(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    crate::platform::detail::open_detail(&app, &id).map_err(|error| error.to_string())
+}
+
+fn parse_snooze_until(until: Option<String>) -> Result<Option<DateTime<Utc>>, SchedulerError> {
+    match until {
+        None => Ok(None),
+        Some(value) => DateTime::parse_from_rfc3339(&value)
+            .map(|parsed| Some(parsed.with_timezone(&Utc)))
+            .map_err(|_| SchedulerError::InvalidSnooze),
+    }
+}
+
+fn open_url(url: &str) -> Result<(), SchedulerError> {
+    let spawned = {
+        #[cfg(target_os = "windows")]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "start", "", url])
+                .spawn()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open").arg(url).spawn()
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            std::process::Command::new("xdg-open").arg(url).spawn()
+        }
+    };
+    spawned.map(|_| ()).map_err(|_| SchedulerError::Open)
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub fn delete_service(state: State<'_, AppState>, id: String) -> Result<(), SchedulerError> {
     {
         let store = state.store.lock().expect("config store lock");
@@ -273,6 +355,16 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn parse_snooze_until_accepts_rfc3339_or_null() {
+        assert_eq!(super::parse_snooze_until(None).unwrap(), None);
+        let parsed = super::parse_snooze_until(Some("2026-08-19T08:00:00.000Z".into()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(parsed.to_rfc3339(), "2026-08-19T08:00:00+00:00");
+        assert!(super::parse_snooze_until(Some("not-a-date".into())).is_err());
     }
 
     #[test]

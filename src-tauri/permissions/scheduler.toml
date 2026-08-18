@@ -38,6 +38,25 @@ identifier = "allow-open-action"
 description = "Open the selected service action URL or health URL."
 commands.allow = ["open_action"]
 
+identifier = "allow-get-detail"
+description = "Load evidence, last result, and 24h samples for the detail window."
+commands.allow = ["get_detail"]
+
+[[permission]]
+identifier = "allow-snooze"
+description = "Write snoozeUntil to SQLite runtime_state only."
+commands.allow = ["snooze"]
+
+[[permission]]
+identifier = "allow-open-action"
+description = "Open the service action URL, or the health URL if unset."
+commands.allow = ["open_action"]
+
+[[permission]]
+identifier = "allow-open-detail"
+description = "Create or focus the detail window and hide the popover."
+commands.allow = ["open_detail"]
+
 [[set]]
 identifier = "allow-scheduler"
 description = "Scheduler controls used by the popover and detail windows."
@@ -50,4 +69,11 @@ permissions = [
     "allow-poller-dead",
     "allow-quit",
     "allow-open-action",
+    "allow-open-action",
+    "allow-snooze",
 ]
+
+[[set]]
+identifier = "allow-detail"
+description = "Evidence window: get_detail plus open/create."
+permissions = ["allow-get-detail", "allow-open-detail"]

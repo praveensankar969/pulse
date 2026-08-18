@@ -83,6 +83,7 @@ pub fn run() {
             app.manage(tray.clone());
             app.manage(AppState::new(store, secrets, handle));
             crate::platform::tray::install(app.handle(), tray)?;
+            crate::platform::detail::install(app.handle());
             Ok(())
         })
         .on_window_event(ipc::windows::on_window_event)
@@ -103,6 +104,10 @@ pub fn run() {
             ipc::commands::poller_dead,
             ipc::commands::quit,
             ipc::commands::open_action,
+            ipc::commands::get_detail,
+            ipc::commands::snooze,
+            ipc::commands::open_action,
+            ipc::commands::open_detail,
             platform::tray::should_suppress_blur,
         ])
         .run(tauri::generate_context!())

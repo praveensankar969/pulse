@@ -170,6 +170,17 @@ impl History {
         Ok(())
     }
 
+    /// SQLite only. `None` clears snooze. Does not create a runtime row for unknown ids.
+    pub fn set_snooze(
+        &self,
+        service_id: &str,
+        until: Option<DateTime<Utc>>,
+    ) -> Result<(), StoreError> {
+        let mut state = self.load_runtime(service_id)?;
+        state.snooze_until = until;
+        self.put_runtime(service_id, &state)
+    }
+
     /// On wake: if still down, add (now - slept_at) to down_clock_adjust_ms.
     /// While paused, only clear slept_at so the overlapping window is not added twice.
     pub fn apply_wake(&self, service_id: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
@@ -1040,6 +1051,23 @@ mod tests {
             newest.first().unwrap().at,
             at_ms(now.timestamp_millis() - 1_999_000)
         );
+    }
+
+    #[test]
+    fn set_snooze_writes_and_clears() {
+        let (_dir, history) = open_temp();
+        let until = at_ms(1_700_000_900_000);
+        history.set_snooze("svc-1", Some(until)).unwrap();
+        assert_eq!(
+            history.load_runtime("svc-1").unwrap().snooze_until,
+            Some(until)
+        );
+        history.set_snooze("svc-1", None).unwrap();
+        assert!(history
+            .load_runtime("svc-1")
+            .unwrap()
+            .snooze_until
+            .is_none());
     }
 
     #[test]

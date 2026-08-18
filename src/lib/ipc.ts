@@ -15,6 +15,16 @@ export type OfflinePayload = { offline: boolean };
 
 export async function listServices(): Promise<ServiceView[]> {
   return invoke<ServiceView[]>("list_services");
+import type {
+  CheckResult,
+  DetailPayload,
+  ServiceView,
+} from "./types";
+
+export type BeginReveal = { token: string; ttlMs: number };
+
+export async function getDetail(id: string): Promise<DetailPayload> {
+  return invoke<DetailPayload>("get_detail", { id });
 }
 
 export async function checkNow(id: string): Promise<CheckResult> {
@@ -30,6 +40,13 @@ export async function setPaused(
   paused: boolean,
 ): Promise<ServiceView> {
   return invoke<ServiceView>("set_paused", { id, paused });
+}
+
+export async function snooze(
+  id: string,
+  until: string | null,
+): Promise<ServiceView> {
+  return invoke<ServiceView>("snooze", { id, until });
 }
 
 export async function openAction(id: string): Promise<void> {
@@ -86,6 +103,35 @@ export async function onEditorTarget(
   return listen<{ id?: string }>("pulse://editor-target", (event) => {
     handler(event.payload);
   });
+export async function openDetail(id: string): Promise<void> {
+  try {
+    await invoke("open_detail", { id });
+  } catch {
+    await emit("pulse://open-detail", { id });
+  }
+}
+
+export async function openEditor(id: string): Promise<void> {
+  await emit("pulse://open-editor", { id });
+}
+
+export async function beginReveal(
+  id: string,
+  headerKey: string,
+): Promise<BeginReveal> {
+  return invoke<BeginReveal>("begin_reveal", { id, headerKey });
+}
+
+export async function revealSecret(
+  id: string,
+  headerKey: string,
+  token: string,
+): Promise<string> {
+  return invoke<string>("reveal_secret", { id, headerKey, token });
+}
+
+export async function endReveal(token: string): Promise<void> {
+  await invoke("end_reveal", { token });
 }
 
 export async function onServices(
@@ -129,5 +175,10 @@ export function bindBlurProtocol(): Promise<UnlistenFn> {
     } catch {
       // Window hide is best-effort; Rust also applies the same protocol.
     }
+export async function onDetailService(
+  handler: (id: string) => void,
+): Promise<UnlistenFn> {
+  return listen<{ id: string }>("pulse://detail-service", (event) => {
+    if (event.payload.id) handler(event.payload.id);
   });
 }

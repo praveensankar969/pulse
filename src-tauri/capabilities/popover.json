@@ -9,5 +9,8 @@
     "allow-scheduler",
     "allow-open-editor",
     "allow-should-suppress-blur"
+    "allow-scheduler",
+    "allow-should-suppress-blur",
+    "allow-open-detail"
   ]
 }

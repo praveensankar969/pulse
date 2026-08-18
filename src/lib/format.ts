@@ -1,4 +1,13 @@
 import type { ServiceView, UiState } from "./types";
+import type {
+  AssertOp,
+  CheckResult,
+  CompactSample,
+  ErrorKind,
+  ExpectedStatus,
+  ServiceStatus,
+  ServiceView,
+} from "./types";
 
 export type PrimaryLabel =
   | "Down"
@@ -25,6 +34,9 @@ const BAND: Record<UiState, number> = {
   paused: 3,
   healthy: 4,
 };
+export type SparkPoint = ServiceStatus | "gap";
+
+const HIDDEN_ERRORS: ErrorKind[] = ["canceled", "offline"];
 
 export function isSlow(view: ServiceView): boolean {
   if (view.state !== "degraded") return false;
@@ -66,6 +78,32 @@ export function markState(view: ServiceView): LabelTone {
     return last === "degraded" && isSlow(view) ? "slow" : last;
   }
   return "paused";
+}
+
+export function isShownError(kind?: ErrorKind): boolean {
+  return kind != null && !HIDDEN_ERRORS.includes(kind);
+}
+
+export function formatLatency(ms: number): string {
+  if (ms >= 1000) {
+    const secs = ms / 1000;
+    return Number.isInteger(secs) ? `${secs}s` : `${secs.toFixed(2)}s`;
+  }
+  return `${ms}ms`;
+}
+
+export function formatAbsolute(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return iso;
+  return new Date(at).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 export function formatCompactDuration(ms: number): string {
@@ -130,6 +168,9 @@ export function relativeTime(
   }
   if (!view.lastCheckAt) return "";
   const at = Date.parse(view.lastCheckAt);
+export function formatRelative(iso: string | undefined, now: number): string {
+  if (!iso) return "";
+  const at = Date.parse(iso);
   if (Number.isNaN(at)) return "";
   return `${formatCompactDuration(Math.max(0, now - at))} ago`;
 }
@@ -192,4 +233,88 @@ export function summary(views: ServiceView[]): {
     return { countText, stripText: "Checking…", stripTone: "neutral" };
   }
   return { countText, stripText: "All healthy", stripTone: "ok" };
+export function tomorrowEightLocal(now = new Date()): string {
+  const next = new Date(now);
+  next.setDate(next.getDate() + 1);
+  next.setHours(8, 0, 0, 0);
+  return next.toISOString();
+}
+
+export function formatExpectedStatus(status: ExpectedStatus): string {
+  if (status === "2xx") return "2xx";
+  if (Array.isArray(status)) return status.join(", ");
+  return String(status);
+}
+
+export function formatOp(op: AssertOp): string {
+  switch (op) {
+    case "not_equals":
+      return "not equals";
+    case "equals":
+    case "contains":
+    case "exists":
+    case "gt":
+    case "lt":
+      return op;
+  }
+}
+
+export function formatJson(value: unknown): string {
+  if (value === undefined) return "—";
+  if (typeof value === "string") return JSON.stringify(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+export function reasonLine(
+  view: ServiceView,
+  last: CheckResult | null,
+): string {
+  if (view.keychainIdentityChanged) {
+    return "Keychain identity changed; re-enter secret headers";
+  }
+  if (last && isShownError(last.errorKind) && last.error) return last.error;
+  if (last?.httpStatus != null && last.latencyMs != null) {
+    return `HTTP ${last.httpStatus} · ${formatLatency(last.latencyMs)}`;
+  }
+  if (last?.httpStatus != null) return `HTTP ${last.httpStatus}`;
+  if (view.state === "pending") return "Waiting for first check";
+  if (view.state === "paused") return "Paused";
+  if (view.state === "healthy") return "Last check passed";
+  return "";
+}
+
+const RANK: Record<ServiceStatus, number> = {
+  healthy: 1,
+  degraded: 2,
+  down: 3,
+};
+
+export function bucket24h(
+  samples: CompactSample[],
+  now: number,
+): SparkPoint[] {
+  const bucketMs = 5 * 60 * 1000;
+  const count = (24 * 60) / 5;
+  const start = now - 24 * 60 * 60 * 1000;
+  const buckets: SparkPoint[] = Array.from({ length: count }, () => "gap");
+  for (const sample of samples) {
+    const at = Date.parse(sample.at);
+    if (Number.isNaN(at)) continue;
+    const index = Math.floor((at - start) / bucketMs);
+    if (index < 0 || index >= count) continue;
+    const prev = buckets[index];
+    if (prev === "gap" || RANK[sample.state] > RANK[prev]) {
+      buckets[index] = sample.state;
+    }
+  }
+  return buckets;
+}
+
+export function padSparkline(points: SparkPoint[]): SparkPoint[] {
+  if (points.length >= 24) return points.slice(-24);
+  return [...Array<SparkPoint>(24 - points.length).fill("gap"), ...points];
 }

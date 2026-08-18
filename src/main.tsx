@@ -28,4 +28,40 @@ if (kind === "popover") {
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>{kind === "editor" ? <EditorWindow /> : <Popover />}</StrictMode>,
+import { DetailWindow } from "./ui/detail/DetailWindow";
+import "./styles/tokens.css";
+import "./styles/reset.css";
+import "./styles/popover.css";
+import "./styles/detail.css";
+
+function surface(): "detail" | "popover" {
+  try {
+    if (getCurrentWindow().label === "detail") return "detail";
+  } catch {
+    // Vite-only preview has no Tauri window.
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("window") === "detail" || params.has("id")) return "detail";
+  return "popover";
+}
+
+const kind = surface();
+
+createRoot(document.getElementById("root") as HTMLElement).render(
+  <StrictMode>
+    {kind === "detail" ? (
+      <DetailWindow />
+    ) : (
+      <main className="popover">
+        <header className="popover-head">
+          <h1 className="wordmark">Pulse</h1>
+        </header>
+        <div className="empty-state">
+          <p>
+            Add the HTTP endpoints you own. Pulse will watch them from the tray.
+          </p>
+        </div>
+      </main>
+    )}
+  </StrictMode>,
 );
