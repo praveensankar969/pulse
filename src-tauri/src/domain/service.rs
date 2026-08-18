@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -83,6 +85,9 @@ impl<'de> Deserialize<'de> for ExpectedStatus {
                     }
                     codes.push(code);
                 }
+                if codes.is_empty() {
+                    return Err(A::Error::custom("expectedStatus list must not be empty"));
+                }
                 Ok(ExpectedStatus::Codes(codes))
             }
         }
@@ -167,7 +172,7 @@ impl HeaderSpec {
         }
         if let Some(value) = &self.value {
             if value.len() > 8192 {
-                return Err(ValidationError::HeaderKey);
+                return Err(ValidationError::HeaderValue);
             }
         }
         Ok(())
@@ -175,7 +180,24 @@ impl HeaderSpec {
 }
 
 impl Service {
+    pub fn validate_list(services: &[Self]) -> Result<(), ValidationError> {
+        if services.len() > 100 {
+            return Err(ValidationError::TooManyServices);
+        }
+        let mut seen = HashSet::with_capacity(services.len());
+        for service in services {
+            service.validate()?;
+            if !seen.insert(service.id.as_str()) {
+                return Err(ValidationError::DuplicateId(service.id.clone()));
+            }
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.id.is_empty() {
+            return Err(ValidationError::Id);
+        }
         if self.name.is_empty() || self.name.chars().count() > 80 {
             return Err(ValidationError::Name);
         }
@@ -221,8 +243,11 @@ impl Service {
         }
         if let Some(body) = &self.body {
             if body.len() > 65_536 {
-                return Err(ValidationError::AssertionValue);
+                return Err(ValidationError::BodyTooLarge);
             }
+        }
+        if matches!(&self.expected_status, ExpectedStatus::Codes(codes) if codes.is_empty()) {
+            return Err(ValidationError::ExpectedStatusEmpty);
         }
         if self.follow_redirects && expected_has_3xx(&self.expected_status) {
             return Err(ValidationError::ExpectedRedirectStatus);
@@ -241,7 +266,7 @@ impl Service {
         }
         if let Some(group) = &self.group {
             if group.chars().count() > 40 {
-                return Err(ValidationError::Name);
+                return Err(ValidationError::Group);
             }
         }
         Ok(())
@@ -260,6 +285,8 @@ fn valid_http_url(value: &str) -> bool {
     if value.is_empty() || value.len() > 2048 {
         return false;
     }
-    let lower = value.to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
+    let Ok(parsed) = url::Url::parse(value) else {
+        return false;
+    };
+    matches!(parsed.scheme(), "http" | "https") && parsed.has_host()
 }

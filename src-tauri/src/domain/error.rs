@@ -36,20 +36,32 @@ pub enum ValidationError {
     FailThreshold { got: u32 },
     #[error("maxLatencyMs must be between 1 and 60000 (got {got})")]
     MaxLatencyMs { got: u32 },
+    #[error("id must not be empty")]
+    Id,
+    #[error("duplicate service id `{0}`")]
+    DuplicateId(String),
+    #[error("too many services (max 100)")]
+    TooManyServices,
     #[error("name must be 1–80 characters")]
     Name,
-    #[error("url must be http(s) and at most 2048 characters")]
+    #[error("url must be http(s) with a host and at most 2048 characters")]
     Url,
-    #[error("actionUrl must be http(s) and at most 2048 characters")]
+    #[error("actionUrl must be http(s) with a host and at most 2048 characters")]
     ActionUrl,
     #[error("body is only allowed on POST")]
     BodyNotAllowed,
+    #[error("body must be at most 65536 bytes")]
+    BodyTooLarge,
     #[error("numeric 3xx expectedStatus requires followRedirects: false")]
     ExpectedRedirectStatus,
+    #[error("expectedStatus list must not be empty")]
+    ExpectedStatusEmpty,
     #[error("secret header `{0}` cannot be stored in this build")]
     SecretNotSupported(String),
     #[error("header key must be 1–128 characters")]
     HeaderKey,
+    #[error("header value must be at most 8192 characters")]
+    HeaderValue,
     #[error("too many headers (max 32)")]
     TooManyHeaders,
     #[error("too many assertions (max 16)")]
@@ -58,6 +70,8 @@ pub enum ValidationError {
     AssertionPath,
     #[error("assertion value exceeds 1024 bytes")]
     AssertionValue,
+    #[error("group must be at most 40 characters")]
+    Group,
     #[error("invalid quiet hours")]
     QuietHours,
     #[error("hotkey must be at most 64 characters")]

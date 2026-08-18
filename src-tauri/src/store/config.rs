@@ -75,9 +75,7 @@ impl ConfigStore {
         let rewrite_services = migrate::migrate_services(&mut services)?;
 
         config.settings.validate()?;
-        for service in &services.services {
-            service.validate()?;
-        }
+        Service::validate_list(&services.services)?;
 
         if rewrite_config {
             write_json(&paths.config_file(), &config)?;
@@ -114,16 +112,12 @@ impl ConfigStore {
     pub fn load_services(&self) -> Result<Vec<Service>, StoreError> {
         let file = read_json::<ServicesFile>(&self.paths.services_file())?;
         migrate::ensure_supported(file.schema_version)?;
-        for service in &file.services {
-            service.validate()?;
-        }
+        Service::validate_list(&file.services)?;
         Ok(file.services)
     }
 
     pub fn save_services(&self, services: &[Service]) -> Result<(), StoreError> {
-        for service in services {
-            service.validate()?;
-        }
+        Service::validate_list(services)?;
         write_json(
             &self.paths.services_file(),
             &ServicesFile {
@@ -143,9 +137,7 @@ impl ConfigStore {
     pub fn load_services_file(&self) -> Result<ServicesFile, StoreError> {
         let file = read_json::<ServicesFile>(&self.paths.services_file())?;
         migrate::ensure_supported(file.schema_version)?;
-        for service in &file.services {
-            service.validate()?;
-        }
+        Service::validate_list(&file.services)?;
         Ok(file)
     }
 }
@@ -214,8 +206,8 @@ fn replace_file(tmp: &Path, dest: &Path) -> Result<(), StoreError> {
 mod tests {
     use super::{atomic_write, ConfigFile, ConfigStore, ServicesFile, StoreError};
     use crate::domain::{
-        AppSettings, HeaderSpec, Service, ValidationError, DEFAULT_FAIL_THRESHOLD,
-        DEFAULT_INTERVAL_SEC, DEFAULT_TIMEOUT_MS,
+        AppSettings, ExpectedStatus, HeaderSpec, HttpMethod, Service, ValidationError,
+        DEFAULT_FAIL_THRESHOLD, DEFAULT_INTERVAL_SEC, DEFAULT_TIMEOUT_MS,
     };
     use crate::store::Paths;
     use std::fs;
@@ -299,6 +291,122 @@ mod tests {
         assert!(matches!(
             err,
             StoreError::Validation(ValidationError::IntervalTooSmall { min: 15, got: 14 })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_persist_rules() {
+        struct Case {
+            name: &'static str,
+            tweak: fn(&mut Service),
+            expected: ValidationError,
+        }
+        let cases = [
+            Case {
+                name: "3xx with followRedirects",
+                tweak: |service| {
+                    service.expected_status = ExpectedStatus::Code(302);
+                    service.follow_redirects = true;
+                },
+                expected: ValidationError::ExpectedRedirectStatus,
+            },
+            Case {
+                name: "assertion object over 1024 bytes",
+                tweak: |service| {
+                    service.assertions[0].value = Some(serde_json::json!({
+                        "pad": "x".repeat(1024)
+                    }));
+                },
+                expected: ValidationError::AssertionValue,
+            },
+            Case {
+                name: "url missing host",
+                tweak: |service| service.url = "https://".into(),
+                expected: ValidationError::Url,
+            },
+            Case {
+                name: "url with embedded newline",
+                tweak: |service| service.url = "http://example.com\nX-Other: 1".into(),
+                expected: ValidationError::Url,
+            },
+            Case {
+                name: "body only on POST",
+                tweak: |service| {
+                    service.method = HttpMethod::Get;
+                    service.body = Some("{}".into());
+                },
+                expected: ValidationError::BodyNotAllowed,
+            },
+            Case {
+                name: "empty id",
+                tweak: |service| service.id.clear(),
+                expected: ValidationError::Id,
+            },
+            Case {
+                name: "empty expectedStatus list",
+                tweak: |service| service.expected_status = ExpectedStatus::Codes(vec![]),
+                expected: ValidationError::ExpectedStatusEmpty,
+            },
+            Case {
+                name: "body too large",
+                tweak: |service| {
+                    service.method = HttpMethod::Post;
+                    service.body = Some("x".repeat(65_537));
+                },
+                expected: ValidationError::BodyTooLarge,
+            },
+            Case {
+                name: "header value too large",
+                tweak: |service| {
+                    service.headers[1].value = Some("x".repeat(8193));
+                },
+                expected: ValidationError::HeaderValue,
+            },
+            Case {
+                name: "group too long",
+                tweak: |service| service.group = Some("g".repeat(41)),
+                expected: ValidationError::Group,
+            },
+        ];
+        for case in cases {
+            let mut service = sample_service();
+            (case.tweak)(&mut service);
+            assert_eq!(service.validate(), Err(case.expected), "{}", case.name);
+        }
+
+        let err = serde_json::from_value::<ExpectedStatus>(serde_json::json!([]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("expectedStatus list must not be empty"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn save_services_rejects_duplicate_ids_and_more_than_100() {
+        let (_dir, store) = open_temp();
+        let first = sample_service();
+        let mut second = sample_service();
+        second.name = "Other".into();
+        let err = store.save_services(&[first.clone(), second]).unwrap_err();
+        assert!(matches!(
+            err,
+            StoreError::Validation(ValidationError::DuplicateId(id))
+                if id == first.id
+        ));
+
+        let too_many: Vec<Service> = (0..101)
+            .map(|index| {
+                let mut service = sample_service();
+                service.id = format!("svc-{index}");
+                service
+            })
+            .collect();
+        let err = store.save_services(&too_many).unwrap_err();
+        assert!(matches!(
+            err,
+            StoreError::Validation(ValidationError::TooManyServices)
         ));
     }
 
