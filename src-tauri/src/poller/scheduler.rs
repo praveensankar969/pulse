@@ -543,7 +543,9 @@ impl Inner {
                 }
                 slot.service = service;
                 slot.check_now = Arc::new(Notify::new());
-                slot.waiters.clear();
+                for waiter in std::mem::take(&mut slot.waiters) {
+                    let _ = waiter.send(Err(SchedulerError::Canceled));
+                }
                 slot.checking = false;
             } else {
                 slots.insert(
@@ -570,11 +572,10 @@ impl Inner {
             let mut slots = self.slots.lock().expect("slots lock");
             let slot = slots.get_mut(id).ok_or(SchedulerError::NotFound)?;
             slot.service.paused = paused;
-            if paused {
-                if let Some(abort) = slot.abort.take() {
-                    abort.abort();
-                }
-            }
+        }
+        if paused {
+            // abort_one drains check_now waiters; a raw abort leaves them parked.
+            self.abort_one(id);
         }
         {
             let history = self.history.lock().expect("history lock");
@@ -1231,6 +1232,49 @@ mod tests {
         assert_eq!(result.evidence.http_status, Some(200));
         assert_eq!(hits.load(Ordering::SeqCst), after_first + 1);
         assert_eq!(handle.view("p").unwrap().state, UiState::Paused);
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn pause_cancels_in_flight_check_now() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(400)))
+            .mount(&server)
+            .await;
+
+        let (_dir, history) = open_history();
+        let svc = sample("hang", format!("{}/slow", server.uri()), 60);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = start(
+            vec![svc],
+            history,
+            Arc::new(SecretStore::for_test()),
+            Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+        );
+
+        wait_state(&handle, "hang", UiState::Healthy).await;
+        let pending = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.check_now("hang").await })
+        };
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        handle.set_paused("hang", true).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(1), pending)
+            .await
+            .expect("check_now must not hang on pause")
+            .unwrap();
+        assert!(
+            matches!(result, Err(SchedulerError::Canceled)),
+            "expected Canceled, got {result:?}"
+        );
+        assert_eq!(handle.view("hang").unwrap().state, UiState::Paused);
 
         handle.shutdown();
         let _ = task.await;
