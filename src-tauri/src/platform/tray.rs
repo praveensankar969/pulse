@@ -162,6 +162,8 @@ struct Inner {
     views: Vec<ServiceView>,
     last_rect: Option<tauri::Rect>,
     apply_icon: Option<Arc<dyn Fn(TrayMark) + Send + Sync>>,
+    query_rect: Option<Arc<dyn Fn() -> Option<tauri::Rect> + Send + Sync>>,
+    first_run_until_focus: bool,
 }
 
 impl Default for TrayHandle {
@@ -180,6 +182,8 @@ impl TrayHandle {
                 views: Vec::new(),
                 last_rect: None,
                 apply_icon: None,
+                query_rect: None,
+                first_run_until_focus: false,
             })),
         }
     }
@@ -206,15 +210,22 @@ impl TrayHandle {
     }
 
     pub fn should_suppress_blur(&self) -> bool {
-        self.inner
-            .lock()
-            .expect("tray lock")
-            .protocol
-            .should_suppress_blur(Instant::now())
+        let inner = self.inner.lock().expect("tray lock");
+        inner.first_run_until_focus || inner.protocol.should_suppress_blur(Instant::now())
+    }
+
+    pub fn arm_first_run_show(&self) {
+        let mut inner = self.inner.lock().expect("tray lock");
+        inner.first_run_until_focus = true;
+        inner.protocol.on_down(ClickButton::Left, Instant::now());
+    }
+
+    pub fn note_popover_focused(&self) {
+        self.inner.lock().expect("tray lock").first_run_until_focus = false;
     }
 
     pub fn remember_rect(&self, rect: &tauri::Rect) {
-        if rect_is_overflow(rect) {
+        if rect_is_empty(rect) {
             return;
         }
         self.inner.lock().expect("tray lock").last_rect = Some(*rect);
@@ -224,8 +235,17 @@ impl TrayHandle {
         self.inner.lock().expect("tray lock").last_rect
     }
 
+    pub fn query_icon_rect(&self) -> Option<tauri::Rect> {
+        let query = self.inner.lock().expect("tray lock").query_rect.clone();
+        query.and_then(|query| query())
+    }
+
     fn bind_icon(&self, apply: Arc<dyn Fn(TrayMark) + Send + Sync>) {
         self.commit_paint(|inner| inner.apply_icon = Some(apply));
+    }
+
+    fn bind_rect_query(&self, query: Arc<dyn Fn() -> Option<tauri::Rect> + Send + Sync>) {
+        self.inner.lock().expect("tray lock").query_rect = Some(query);
     }
 
     /// Snapshot mark under the lock, then paint after drop. `set_icon` blocks on main.
@@ -311,6 +331,23 @@ pub fn install<R: tauri::Runtime>(app: &AppHandle<R>, tray: TrayHandle) -> tauri
     // Status color must survive macOS menu-bar recolor.
     let _ = built.set_icon_as_template(false);
 
+    if let Ok(Some(rect)) = built.rect() {
+        tray.remember_rect(&rect);
+    }
+    let query_icon = built.clone();
+    tray.bind_rect_query(Arc::new(move || query_icon.rect().ok().flatten()));
+
+    #[cfg(windows)]
+    {
+        let hook_tray = tray.clone();
+        let hook_app = app.clone();
+        if let Ok(hwnd) = built.with_inner_tray_icon(|inner| inner.window_handle() as isize) {
+            overflow_hook::install(hwnd, move |button, down| {
+                handle_getrect_fail(&hook_app, &hook_tray, button, down);
+            });
+        }
+    }
+
     let apply_icon = {
         let icon = built.clone();
         Arc::new(move |mark: TrayMark| {
@@ -340,12 +377,12 @@ pub fn install<R: tauri::Runtime>(app: &AppHandle<R>, tray: TrayHandle) -> tauri
     if let Some(popover) = app.get_webview_window("popover") {
         let blur_tray = tray.clone();
         let hide = popover.clone();
-        popover.on_window_event(move |event| {
-            if matches!(event, tauri::WindowEvent::Focused(false))
-                && !blur_tray.should_suppress_blur()
-            {
+        popover.on_window_event(move |event| match event {
+            tauri::WindowEvent::Focused(true) => blur_tray.note_popover_focused(),
+            tauri::WindowEvent::Focused(false) if !blur_tray.should_suppress_blur() => {
                 let _ = hide.hide();
             }
+            _ => {}
         });
     }
 
@@ -394,32 +431,107 @@ fn handle_tray_event<R: tauri::Runtime>(
     };
     match button_state {
         MouseButtonState::Down => {
-            tray.remember_rect(&rect);
+            if !click_is_overflow(app, &rect) {
+                tray.remember_rect(&rect);
+            }
             tray.on_down(click);
         }
         MouseButtonState::Up => {
-            tray.remember_rect(&rect);
-            // tray-icon 0.24 drops the whole Click when GetRect fails (overflow).
-            let overflow = rect_is_overflow(&rect);
+            let overflow = click_is_overflow(app, &rect);
+            if !overflow {
+                tray.remember_rect(&rect);
+            }
             match tray.on_up(click, overflow) {
                 ClickOutcome::Toggle => apply_visibility(app, Some(&rect), false),
-                ClickOutcome::ShowOnly => apply_visibility(app, Some(&rect), true),
+                ClickOutcome::ShowOnly => apply_visibility(app, None, true),
                 ClickOutcome::None => {}
             }
         }
     }
 }
 
-fn rect_is_overflow(rect: &tauri::Rect) -> bool {
+#[cfg(windows)]
+fn handle_getrect_fail<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    tray: &TrayHandle,
+    button: ClickButton,
+    down: bool,
+) {
+    if down {
+        tray.on_down(button);
+        return;
+    }
+    match tray.on_up(button, true) {
+        ClickOutcome::ShowOnly | ClickOutcome::Toggle => apply_visibility(app, None, true),
+        ClickOutcome::None => {}
+    }
+}
+
+pub fn rect_is_empty(rect: &tauri::Rect) -> bool {
     match rect.size {
         Size::Physical(size) => size.width < 1 || size.height < 1,
         Size::Logical(size) => size.width < 1.0 || size.height < 1.0,
     }
 }
 
+/// Icon sits on the taskbar / menu bar when it is not fully inside the work area.
+pub fn icon_on_taskbar(icon: WorkArea, work: WorkArea) -> bool {
+    let (ix, iy, iw, ih) = icon;
+    let (wx, wy, ww, wh) = work;
+    let ir = ix.saturating_add_unsigned(iw);
+    let ib = iy.saturating_add_unsigned(ih);
+    let wr = wx.saturating_add_unsigned(ww);
+    let wb = wy.saturating_add_unsigned(wh);
+    !(ix >= wx && iy >= wy && ir <= wr && ib <= wb)
+}
+
+fn rect_box(rect: &tauri::Rect) -> WorkArea {
+    let (x, y) = match rect.position {
+        Position::Physical(pos) => (pos.x, pos.y),
+        Position::Logical(pos) => (pos.x as i32, pos.y as i32),
+    };
+    let (w, h) = match rect.size {
+        Size::Physical(size) => (size.width, size.height),
+        Size::Logical(size) => (size.width as u32, size.height as u32),
+    };
+    (x, y, w, h)
+}
+
+fn click_is_overflow<R: tauri::Runtime>(app: &AppHandle<R>, rect: &tauri::Rect) -> bool {
+    if rect_is_empty(rect) {
+        return true;
+    }
+    let Some(window) = app.get_webview_window("popover") else {
+        return false;
+    };
+    let icon = rect_box(rect);
+    let cx = icon.0 + icon.2 as i32 / 2;
+    let cy = icon.1 + icon.3 as i32 / 2;
+    match monitor_work_area_for_point(&window, cx, cy) {
+        Some(area) => !icon_on_taskbar(icon, area),
+        None => false,
+    }
+}
+
 /// Show-only + work-area. Not gated on a delivered Click (GetRect-fail / overflow).
 pub fn show_popover_if_hidden<R: tauri::Runtime>(app: &AppHandle<R>) {
     apply_visibility(app, None, true);
+}
+
+/// First-run: place under the tray icon when we have a rect; suppress blur until focused.
+pub fn show_first_run<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
+    let Some(tray) = app.try_state::<TrayHandle>() else {
+        return false;
+    };
+    tray.arm_first_run_show();
+    let rect = tray.query_icon_rect().or_else(|| tray.last_rect());
+    let usable = rect
+        .as_ref()
+        .filter(|rect| !rect_is_empty(rect) && !click_is_overflow(app, rect));
+    apply_visibility(app, usable, true);
+    app.get_webview_window("popover")
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false)
 }
 
 /// Global hotkey: same placement as a left click when we have a tray rect.
@@ -442,7 +554,7 @@ fn apply_visibility<R: tauri::Runtime>(
     if show_only {
         if !visible {
             match rect {
-                Some(rect) if !rect_is_overflow(rect) => place_popover(&window, rect),
+                Some(rect) if !rect_is_empty(rect) => place_popover(&window, rect),
                 _ => place_work_area_fallback(&window),
             }
             let _ = window.show();
@@ -455,7 +567,7 @@ fn apply_visibility<R: tauri::Runtime>(
         return;
     }
     match rect {
-        Some(rect) if !rect_is_overflow(rect) => place_popover(&window, rect),
+        Some(rect) if !rect_is_empty(rect) => place_popover(&window, rect),
         _ => place_work_area_fallback(&window),
     }
     let _ = window.show();
@@ -508,19 +620,29 @@ fn place_work_area_fallback<R: tauri::Runtime>(window: &WebviewWindow<R>) {
         ));
         return;
     };
-    let (x, y) = work_area_anchor(area, outer.width, outer.height, WORK_AREA_INSET);
+    let from_top = cfg!(target_os = "macos");
+    let (x, y) = work_area_anchor(area, outer.width, outer.height, WORK_AREA_INSET, from_top);
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
-type WorkArea = (i32, i32, u32, u32);
+pub type WorkArea = (i32, i32, u32, u32);
 
-/// Bottom-right of the work area, inset so overflow flyouts stay on-screen.
-pub fn work_area_anchor(area: WorkArea, pop_w: u32, pop_h: u32, inset: i32) -> (i32, i32) {
+/// Overflow / first-run fallback: Windows bottom-right, macOS top-right (menu bar).
+pub fn work_area_anchor(
+    area: WorkArea,
+    pop_w: u32,
+    pop_h: u32,
+    inset: i32,
+    from_top: bool,
+) -> (i32, i32) {
     let (area_x, area_y, area_w, area_h) = area;
-    (
-        area_x + area_w as i32 - pop_w as i32 - inset,
-        area_y + area_h as i32 - pop_h as i32 - inset,
-    )
+    let x = area_x + area_w as i32 - pop_w as i32 - inset;
+    let y = if from_top {
+        area_y + inset
+    } else {
+        area_y + area_h as i32 - pop_h as i32 - inset
+    };
+    (x, y)
 }
 
 /// Keep the popover on the same monitor as the tray / cursor.
@@ -567,6 +689,15 @@ fn monitor_bounds(monitor: &tauri::Monitor) -> WorkArea {
 }
 
 fn work_area_containing<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    px: i32,
+    py: i32,
+) -> Option<WorkArea> {
+    monitor_work_area_for_point(window, px, py)
+        .filter(|(x, y, w, h)| px >= *x && py >= *y && px < *x + *w as i32 && py < *y + *h as i32)
+}
+
+fn monitor_work_area_for_point<R: tauri::Runtime>(
     window: &WebviewWindow<R>,
     px: i32,
     py: i32,
@@ -853,6 +984,90 @@ fn blend(px: &mut [u8], rgb: [u8; 3], cover: f32) {
     px[3] = (out_a * 255.0 + 0.5) as u8;
 }
 
+/// tray-icon 0.24 drops Click when `Shell_NotifyIconGetRect` fails. Subclass the
+/// tray hwnd and treat that as ShowOnly + work-area (no toggle-fight).
+#[cfg(windows)]
+mod overflow_hook {
+    use std::sync::{Arc, Mutex};
+
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+    use windows_sys::Win32::UI::Shell::{Shell_NotifyIconGetRect, NOTIFYICONIDENTIFIER};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC, WM_LBUTTONDOWN, WM_LBUTTONUP,
+        WM_RBUTTONDOWN, WM_RBUTTONUP, WNDPROC,
+    };
+
+    use super::ClickButton;
+
+    const WM_USER_TRAYICON: u32 = 6002;
+
+    static ORIG: Mutex<isize> = Mutex::new(0);
+    static HANDLER: Mutex<Option<Arc<dyn Fn(ClickButton, bool) + Send + Sync>>> = Mutex::new(None);
+
+    pub fn install(hwnd: isize, on_overflow: impl Fn(ClickButton, bool) + Send + Sync + 'static) {
+        *HANDLER.lock().expect("overflow handler") = Some(Arc::new(on_overflow));
+        unsafe {
+            let hwnd = hwnd as HWND;
+            let prev = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, hook as usize as isize);
+            *ORIG.lock().expect("overflow orig") = prev;
+        }
+    }
+
+    unsafe extern "system" fn hook(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_USER_TRAYICON {
+            let click = match lparam as u32 {
+                WM_LBUTTONDOWN => Some((ClickButton::Left, true)),
+                WM_LBUTTONUP => Some((ClickButton::Left, false)),
+                WM_RBUTTONDOWN => Some((ClickButton::Right, true)),
+                WM_RBUTTONUP => Some((ClickButton::Right, false)),
+                _ => None,
+            };
+            if let Some((button, down)) = click {
+                if notify_rect_failed(hwnd) {
+                    if let Some(handler) = HANDLER.lock().expect("overflow handler").clone() {
+                        handler(button, down);
+                    }
+                }
+            }
+        }
+        let orig = *ORIG.lock().expect("overflow orig");
+        if orig == 0 {
+            return 0;
+        }
+        let prev: WNDPROC = std::mem::transmute(orig);
+        CallWindowProcW(prev, hwnd, msg, wparam, lparam)
+    }
+
+    fn notify_rect_failed(hwnd: HWND) -> bool {
+        for uid in 0..32u32 {
+            let nid = NOTIFYICONIDENTIFIER {
+                cbSize: std::mem::size_of::<NOTIFYICONIDENTIFIER>() as u32,
+                hWnd: hwnd,
+                uID: uid,
+                guidItem: unsafe { std::mem::zeroed() },
+            };
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            if unsafe { Shell_NotifyIconGetRect(&nid, &mut rect) } >= 0
+                && rect.right > rect.left
+                && rect.bottom > rect.top
+            {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1051,14 +1266,47 @@ mod tests {
     #[test]
     fn work_area_fallback_is_bottom_right_minus_inset() {
         assert_eq!(
-            work_area_anchor((0, 0, 1920, 1080), 372, 480, 12),
+            work_area_anchor((0, 0, 1920, 1080), 372, 480, 12, false),
             (1920 - 372 - 12, 1080 - 480 - 12)
         );
         let secondary = (1920, 0, 1440, 900);
         assert_eq!(
-            work_area_anchor(secondary, 372, 480, 12),
+            work_area_anchor(secondary, 372, 480, 12, false),
             (1920 + 1440 - 372 - 12, 900 - 480 - 12)
         );
+    }
+
+    #[test]
+    fn macos_first_run_fallback_is_top_right() {
+        assert_eq!(
+            work_area_anchor((0, 0, 1920, 1080), 372, 480, 12, true),
+            (1920 - 372 - 12, 12)
+        );
+    }
+
+    #[test]
+    fn flyout_inside_work_area_is_overflow_taskbar_is_not() {
+        let work = (0, 0, 1920, 1040);
+        let taskbar = (1880, 1040, 24, 40);
+        let flyout = (1700, 800, 24, 24);
+        assert!(icon_on_taskbar(taskbar, work));
+        assert!(!icon_on_taskbar(flyout, work));
+        let empty = tauri::Rect {
+            position: Position::Physical(PhysicalPosition::new(0, 0)),
+            size: Size::Physical(tauri::PhysicalSize::new(0, 0)),
+        };
+        assert!(rect_is_empty(&empty));
+    }
+
+    #[test]
+    fn first_run_suppresses_blur_until_focused() {
+        let tray = TrayHandle::new();
+        assert!(!tray.should_suppress_blur());
+        tray.arm_first_run_show();
+        assert!(tray.should_suppress_blur());
+        tray.note_popover_focused();
+        std::thread::sleep(Duration::from_millis(260));
+        assert!(!tray.should_suppress_blur());
     }
 
     #[test]

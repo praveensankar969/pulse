@@ -13,7 +13,9 @@ use std::sync::Arc;
 use tauri::{Manager, RunEvent};
 
 use crate::ipc::AppState;
-use crate::launch::{harbor_services, merge_demo, pause_all, take_first_run_popover, LaunchFlags};
+use crate::launch::{
+    first_run_pending, harbor_services, mark_first_run_shown, merge_demo, pause_all, LaunchFlags,
+};
 use crate::notify::{handle_activation, NotifyHub, OsNotifier};
 use crate::poller::scheduler::{Scheduler, SchedulerConfig, TauriEvents};
 use crate::store::{ConfigStore, History, Paths, SecretStore};
@@ -108,8 +110,8 @@ pub fn run() {
             crate::platform::tray::install(app.handle(), tray)?;
             crate::platform::detail::install(app.handle());
             crate::platform::settings::install(app.handle());
-            if take_first_run_popover(&paths) {
-                crate::platform::tray::show_popover_if_hidden(app.handle());
+            if first_run_pending(&paths) && crate::platform::tray::show_first_run(app.handle()) {
+                mark_first_run_shown(&paths);
             }
             // Installed Windows toast may relaunch with `pulse:focus?id=`.
             let args: Vec<String> = std::env::args().collect();

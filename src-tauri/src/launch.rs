@@ -18,6 +18,10 @@ pub struct LaunchFlags {
 }
 
 impl LaunchFlags {
+    /// Pulse **process** argv (`std::env::args()`), not the pnpm/tauri shell line.
+    ///
+    /// Tauri 2 `dev` treats `[ARGS]` after one `--` as cargo/runner args. App
+    /// flags need a second `--`: `pnpm tauri dev -- -- --paused`.
     pub fn from_args<I, S>(args: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -41,20 +45,23 @@ struct FirstRun {
     empty_popover_shown: bool,
 }
 
-/// One-shot: first launch shows the empty popover so the user can find the tray app.
-pub fn take_first_run_popover(paths: &Paths) -> bool {
+/// Read-only. Does not consume the one-shot — write only after the popover is visible.
+pub fn first_run_pending(paths: &Paths) -> bool {
     let path = paths.first_run_file();
-    if let Ok(bytes) = fs::read(&path) {
-        if serde_json::from_slice::<FirstRun>(&bytes).is_ok_and(|state| state.empty_popover_shown) {
-            return false;
+    match fs::read(&path) {
+        Ok(bytes) => {
+            !serde_json::from_slice::<FirstRun>(&bytes).is_ok_and(|state| state.empty_popover_shown)
         }
+        Err(_) => true,
     }
+}
+
+pub fn mark_first_run_shown(paths: &Paths) {
     if let Ok(encoded) = serde_json::to_vec_pretty(&FirstRun {
         empty_popover_shown: true,
     }) {
-        let _ = fs::write(path, encoded);
+        let _ = fs::write(paths.first_run_file(), encoded);
     }
-    true
 }
 
 pub fn pause_all(services: &mut [Service]) {
@@ -77,7 +84,7 @@ pub fn merge_demo(mut existing: Vec<Service>, demo: Vec<Service>) -> Vec<Service
     existing
 }
 
-/// Seven Harbor rows from DESIGN.md, used by `pnpm tauri dev -- --demo`.
+/// Seven Harbor rows from DESIGN.md, used by `pnpm tauri dev -- -- --demo`.
 pub fn harbor_services(now: DateTime<Utc>) -> Vec<Service> {
     vec![
         harbor(
@@ -220,8 +227,9 @@ mod tests {
                 demo: false
             }
         );
+        // Process argv after `pnpm tauri dev -- -- --demo --paused`.
         assert_eq!(
-            LaunchFlags::from_args(["pnpm", "tauri", "dev", "--", "--demo", "--paused"]),
+            LaunchFlags::from_args(["pulse", "--demo", "--paused"]),
             LaunchFlags {
                 paused: true,
                 demo: true
@@ -285,12 +293,14 @@ mod tests {
     }
 
     #[test]
-    fn first_run_popover_is_one_shot() {
+    fn first_run_popover_is_one_shot_after_mark() {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path());
         ConfigStore::open(paths.clone()).unwrap();
-        assert!(take_first_run_popover(&paths));
-        assert!(!take_first_run_popover(&paths));
+        assert!(first_run_pending(&paths));
+        assert!(!paths.first_run_file().exists());
+        mark_first_run_shown(&paths);
+        assert!(!first_run_pending(&paths));
         assert!(paths.first_run_file().exists());
     }
 }

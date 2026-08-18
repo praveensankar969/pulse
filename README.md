@@ -25,8 +25,12 @@ First launch opens the empty popover once so you can find the tray icon, then Pu
 
 A bad poller build: launch with `--paused` so every service starts paused (persisted to `services.json`).
 
+Tauri 2 `dev` treats args after one `--` as cargo/runner args. App flags need a **second** `--` so they reach the Pulse process (`["pulse", "--paused"]`):
+
 ```sh
-pnpm tauri dev -- --paused
+pnpm tauri dev -- -- --paused
+# or
+pnpm dev:paused
 ```
 
 Unpause rows from the popover (`P`) or detail window when the build is good.
@@ -36,10 +40,12 @@ Unpause rows from the popover (`P`) or detail window when the build is good.
 Optional 7-service Harbor fixture set (API, Web, Worker, Auth, Payments API, Docs, NAS) for screenshots / dogfood:
 
 ```sh
-pnpm tauri dev -- --demo
+pnpm tauri dev -- -- --demo
+# or
+pnpm dev:demo
 ```
 
-Combine flags: `pnpm tauri dev -- --demo --paused`. Re-running `--demo` does not overwrite services you already edited.
+Combine flags: `pnpm tauri dev -- -- --demo --paused`. Re-running `--demo` does not overwrite services you already edited.
 
 ## Test
 
@@ -86,7 +92,7 @@ Match these before tagging. Plus the extras at the bottom.
 - [ ] New service is **Pending**, not green. Tray is hollow until the first non-pending result.
 - [ ] Snooze keeps the tray **red** and the primary label **Down** (Snoozed is an extra pill).
 - [ ] Notification click is best-effort show popover. Windows click is only claimed on an installed NSIS build — do not fail QA on `tauri dev` toasts.
-- [ ] `--paused` starts every service paused. `--demo` seeds the 7 Harbor rows.
+- [ ] `pnpm tauri dev -- -- --paused` starts every service paused. `pnpm tauri dev -- -- --demo` seeds the 7 Harbor rows.
 - [ ] Check now / Check all, pause (`P`), add (`Cmd/Ctrl+N`), Enter opens the action URL, Shift+Enter opens detail.
 - [ ] Import / export / reset; export with secrets uses the `.SECRETS.json` name.
 - [ ] Quiet hours queue downs; Always alert bypasses the window. Launch-at-login prompt fires once after first save.

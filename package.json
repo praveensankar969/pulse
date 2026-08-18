@@ -9,6 +9,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "dev:paused": "tauri dev -- -- --paused",
+    "dev:demo": "tauri dev -- -- --demo",
     "test": "vitest run"
   },
   "dependencies": {
