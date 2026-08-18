@@ -14,6 +14,14 @@ pub fn is_mask(value: &str) -> bool {
     value == SECRET_MASK
 }
 
+/// Edited mask leftovers (`•••••••`, `••••••••x`) are not real header values.
+pub fn is_mask_like(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    is_mask(value) || value.contains(SECRET_MASK) || value.chars().all(|ch| ch == '•')
+}
+
 pub fn is_redacted_header(key: &str) -> bool {
     matches!(
         key.to_ascii_lowercase().as_str(),
@@ -266,11 +274,14 @@ pub struct Service {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceView {
     #[serde(flatten)]
     pub service: Service,
+    /// UI headers (`hasValue` + mask). Serialized as `headers`, replacing HeaderSpec.
+    #[serde(default, skip_deserializing)]
+    pub headers: Vec<Header>,
     pub state: UiState,
     /// Runtime only. Never on Service / services.json / export.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -289,6 +300,75 @@ pub struct ServiceView {
     pub down_clock_adjust_ms: u64,
     pub consecutive_hard_fails: u32,
     pub sparkline24: Vec<SparklinePoint>,
+}
+
+impl Serialize for ServiceView {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = serde_json::to_value(&self.service).map_err(serde::ser::Error::custom)?;
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| serde::ser::Error::custom("service view must be an object"))?;
+        object.insert(
+            "headers".into(),
+            serde_json::to_value(&self.headers).map_err(serde::ser::Error::custom)?,
+        );
+        object.insert(
+            "state".into(),
+            serde_json::to_value(self.state).map_err(serde::ser::Error::custom)?,
+        );
+        if let Some(snooze) = self.snooze_until {
+            object.insert(
+                "snoozeUntil".into(),
+                serde_json::to_value(snooze).map_err(serde::ser::Error::custom)?,
+            );
+        }
+        if let Some(changed) = self.keychain_identity_changed {
+            object.insert(
+                "keychainIdentityChanged".into(),
+                serde_json::to_value(changed).map_err(serde::ser::Error::custom)?,
+            );
+        }
+        if let Some(last) = &self.last_result {
+            object.insert(
+                "lastResult".into(),
+                serde_json::to_value(last).map_err(serde::ser::Error::custom)?,
+            );
+        }
+        if let Some(at) = self.last_check_at {
+            object.insert(
+                "lastCheckAt".into(),
+                serde_json::to_value(at).map_err(serde::ser::Error::custom)?,
+            );
+        }
+        if let Some(at) = self.down_since {
+            object.insert(
+                "downSince".into(),
+                serde_json::to_value(at).map_err(serde::ser::Error::custom)?,
+            );
+        }
+        if let Some(at) = self.degraded_since {
+            object.insert(
+                "degradedSince".into(),
+                serde_json::to_value(at).map_err(serde::ser::Error::custom)?,
+            );
+        }
+        if !is_zero_u64(&self.down_clock_adjust_ms) {
+            object.insert(
+                "downClockAdjustMs".into(),
+                serde_json::to_value(self.down_clock_adjust_ms)
+                    .map_err(serde::ser::Error::custom)?,
+            );
+        }
+        object.insert(
+            "consecutiveHardFails".into(),
+            serde_json::to_value(self.consecutive_hard_fails).map_err(serde::ser::Error::custom)?,
+        );
+        object.insert(
+            "sparkline24".into(),
+            serde_json::to_value(&self.sparkline24).map_err(serde::ser::Error::custom)?,
+        );
+        value.serialize(serializer)
+    }
 }
 
 impl HeaderSpec {

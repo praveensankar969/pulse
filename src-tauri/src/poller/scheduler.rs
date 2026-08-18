@@ -586,6 +586,7 @@ impl Inner {
                 last.as_ref(),
                 &samples,
                 identity,
+                &self.secrets,
             ));
         }
         views.sort_by(|a, b| a.service.id.cmp(&b.service.id));

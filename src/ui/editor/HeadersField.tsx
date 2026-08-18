@@ -1,4 +1,4 @@
-import { SECRET_MASK } from "../../lib/types";
+import { isMaskLike, SECRET_MASK } from "../../lib/types";
 
 export type HeaderRow = {
   key: string;
@@ -24,6 +24,7 @@ export function HeadersField({ rows, missingKey, onChange }: Props) {
       {rows.map((row, index) => {
         const missing =
           row.secret && missingKey && row.key.toLowerCase() === missingKey.toLowerCase();
+        const masked = isMaskLike(row.value);
         return (
           <div key={index} className="header-edit-row">
             <input
@@ -37,24 +38,30 @@ export function HeadersField({ rows, missingKey, onChange }: Props) {
               className="mono"
               value={row.value}
               placeholder={row.secret ? "secret value" : "value"}
-              type={row.secret && row.value === SECRET_MASK ? "password" : "text"}
+              type={row.secret && masked ? "password" : "text"}
               autoComplete="off"
               aria-label="Header value"
+              onFocus={(event) => {
+                if (masked) event.currentTarget.select();
+              }}
               onChange={(event) => update(index, { value: event.target.value })}
             />
             <label className="check-row tight">
               <input
                 type="checkbox"
                 checked={row.secret}
-                onChange={(event) =>
-                  update(index, {
-                    secret: event.target.checked,
-                    value:
-                      event.target.checked && row.hadValue && !row.value
-                        ? SECRET_MASK
-                        : row.value,
-                  })
-                }
+                onChange={(event) => {
+                  const secret = event.target.checked;
+                  if (!secret && masked) {
+                    update(index, { secret: false, value: "" });
+                    return;
+                  }
+                  if (secret && row.hadValue && !row.value) {
+                    update(index, { secret: true, value: SECRET_MASK });
+                    return;
+                  }
+                  update(index, { secret });
+                }}
               />
               secret
             </label>
@@ -92,13 +99,15 @@ export function draftHeaders(rows: HeaderRow[]) {
     .filter((row) => row.key.trim().length > 0)
     .map((row) => {
       const key = row.key.trim();
+      const maskLike = isMaskLike(row.value);
       if (!row.secret) {
-        return { key, secret: false, value: row.value };
+        // Uncheck-while-masked must not persist the bullets.
+        return { key, secret: false, value: maskLike ? "" : row.value };
       }
       if (row.value === "" && row.hadValue) {
         return { key, secret: true, clear: true };
       }
-      if (row.value && row.value !== SECRET_MASK) {
+      if (row.value && !maskLike) {
         return { key, secret: true, value: row.value };
       }
       return { key, secret: true };

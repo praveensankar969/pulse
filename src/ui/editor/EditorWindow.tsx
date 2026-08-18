@@ -39,6 +39,8 @@ type FormState = {
   notify: boolean;
   alwaysAlert: boolean;
   body: string;
+  failThreshold?: number;
+  group?: string;
 };
 
 function defaults(settings: AppSettings): FormState {
@@ -118,13 +120,16 @@ export function EditorWindow() {
       notify: view.notify,
       alwaysAlert: view.alwaysAlert,
       body: view.body ?? "",
+      failThreshold: view.failThreshold,
+      group: view.group,
     });
     setHeaders(
       view.headers.map((header) => ({
         key: header.key,
-        value: header.secret ? SECRET_MASK : (header.value ?? ""),
+        value:
+          header.secret && header.hasValue ? SECRET_MASK : header.secret ? "" : header.value,
         secret: header.secret,
-        hadValue: header.secret,
+        hadValue: header.secret && header.hasValue,
       })),
     );
     setAssertions(rowsFromAssertions(view.assertions));
@@ -195,6 +200,8 @@ export function EditorWindow() {
     if (post && form.body) draft.body = form.body;
     if (maxLatencyMs != null) draft.maxLatencyMs = maxLatencyMs;
     if (actionUrl) draft.actionUrl = actionUrl;
+    if (form.failThreshold != null) draft.failThreshold = form.failThreshold;
+    if (form.group) draft.group = form.group;
     return draft;
   }
 
@@ -202,7 +209,10 @@ export function EditorWindow() {
     if (!form) return "Still loading.";
     const url = form.url.trim();
     if (!url) return "URL is required.";
-    const status = parseExpectedStatus(form.expectedRaw) ?? "2xx";
+    const status = parseExpectedStatus(form.expectedRaw);
+    if (!status) {
+      return "expectedStatus must be 2xx, a status code, or a list of codes.";
+    }
     const maxLatencyMs = form.maxLatencyRaw.trim()
       ? Number(form.maxLatencyRaw)
       : undefined;
@@ -224,6 +234,8 @@ export function EditorWindow() {
     if (maxLatencyMs != null && Number.isFinite(maxLatencyMs) && maxLatencyMs >= 1) {
       draft.maxLatencyMs = maxLatencyMs;
     }
+    if (form.failThreshold != null) draft.failThreshold = form.failThreshold;
+    if (form.group) draft.group = form.group;
     return draft;
   }
 
@@ -231,7 +243,6 @@ export function EditorWindow() {
     const draft = buildTestDraft();
     if (typeof draft === "string") {
       setTestError(draft);
-      lastTestFailed.current = true;
       return;
     }
     setTesting(true);
@@ -243,7 +254,6 @@ export function EditorWindow() {
     } catch (error) {
       setEvidence(null);
       setTestError(error instanceof Error ? error.message : String(error));
-      lastTestFailed.current = true;
     } finally {
       setTesting(false);
     }

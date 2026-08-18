@@ -760,6 +760,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
             },
+            headers: vec![],
             state,
             snooze_until: snoozed.then(|| now + ChronoDuration::hours(1)),
             keychain_identity_changed: None,

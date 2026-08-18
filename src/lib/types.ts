@@ -1,6 +1,11 @@
 /** UI mask. Never persist or send this string as a header value. */
 export const SECRET_MASK = "••••••••";
 
+export function isMaskLike(value: string): boolean {
+  if (!value) return false;
+  return value.includes(SECRET_MASK) || /^•+$/.test(value);
+}
+
 export type HttpMethod = "GET" | "HEAD" | "POST";
 /** Flap-damped machine state after on_result. Never produced by evaluate(). */
 export type ServiceStatus = "healthy" | "degraded" | "down";
@@ -115,7 +120,9 @@ export interface CheckResult extends CheckEvidence {
   state: ServiceStatus;
 }
 
-export interface ServiceView extends Service {
+export interface ServiceView extends Omit<Service, "headers"> {
+  /** UI headers. Secret values are "" or the mask; hasValue decides the mask. */
+  headers: Header[];
   state: UiState;
   /** Runtime only. Never on Service / services.json / export. */
   snoozeUntil?: string;

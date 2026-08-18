@@ -17,8 +17,9 @@ pub use check::{
 pub use error::{ErrorKind, MessageArgs, ValidationError};
 pub use runtime::{MachineStatus, RuntimeState};
 pub use service::{
-    is_mask, is_redacted_header, DraftHeader, ExpectedStatus, Header, HeaderSpec, HttpMethod,
-    Service, ServiceDraft, ServiceView, MAX_INTERVAL_SEC, MIN_INTERVAL_SEC, SECRET_MASK,
+    is_mask, is_mask_like, is_redacted_header, DraftHeader, ExpectedStatus, Header, HeaderSpec,
+    HttpMethod, Service, ServiceDraft, ServiceView, MAX_INTERVAL_SEC, MIN_INTERVAL_SEC,
+    SECRET_MASK,
 };
 pub use settings::{
     AppSettings, QuietHours, Theme, DEFAULT_FAIL_THRESHOLD, DEFAULT_INTERVAL_SEC,

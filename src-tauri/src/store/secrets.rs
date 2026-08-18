@@ -9,8 +9,8 @@ use serde::Serialize;
 
 use super::StoreError;
 use crate::domain::{
-    is_mask, is_redacted_header, DraftHeader, Header, HeaderSpec, Service, ServiceDraft,
-    SECRET_MASK,
+    is_mask, is_mask_like, is_redacted_header, DraftHeader, Header, HeaderSpec, Service,
+    ServiceDraft, SECRET_MASK,
 };
 
 pub const KEYCHAIN_SERVICE: &str = "dev.pulsebar.app";
@@ -141,7 +141,7 @@ impl SecretStore {
     }
 
     pub fn set(&self, service_id: &str, header_key: &str, value: &str) -> Result<(), SecretError> {
-        if is_mask(value) {
+        if is_mask_like(value) {
             return Err(SecretError::MaskValue);
         }
         match self.with_entry(service_id, header_key, |entry| entry.set_password(value)) {
@@ -316,7 +316,7 @@ pub fn resolve_secrets(
             });
         }
         if let Some(value) = header.value {
-            if !is_mask(value) {
+            if !is_mask_like(value) {
                 resolved.push(ResolvedHeader {
                     key: header.key.to_string(),
                     value: value.to_string(),
@@ -400,7 +400,7 @@ pub fn persist_draft_headers(
             if header.clear {
                 secrets.delete(service_id, &header.key)?;
             } else if let Some(value) = header.value.as_deref() {
-                if !is_mask(value) {
+                if !is_mask_like(value) {
                     secrets.set(service_id, &header.key, value)?;
                 }
             }
@@ -410,10 +410,14 @@ pub fn persist_draft_headers(
                 value: None,
             });
         } else {
+            let value = header.value.clone().unwrap_or_default();
+            if is_mask_like(&value) {
+                return Err(SecretError::MaskValue.into());
+            }
             persisted.push(HeaderSpec {
                 key: header.key.clone(),
                 secret: false,
-                value: Some(header.value.clone().unwrap_or_default()),
+                value: Some(value),
             });
         }
     }
@@ -703,6 +707,28 @@ mod tests {
             store.set("svc", "Authorization", SECRET_MASK),
             Err(SecretError::MaskValue)
         ));
+        assert!(matches!(
+            store.set("svc", "Authorization", &format!("{SECRET_MASK}x")),
+            Err(SecretError::MaskValue)
+        ));
+    }
+
+    #[test]
+    fn persist_refuses_mask_on_non_secret_header() {
+        let store = SecretStore::for_test();
+        let err = persist_draft_headers(
+            &store,
+            "svc",
+            &[DraftHeader {
+                key: "Authorization".into(),
+                value: Some(SECRET_MASK.into()),
+                secret: false,
+                clear: false,
+            }],
+            &[],
+        )
+        .unwrap_err();
+        assert!(matches!(err, StoreError::Keychain { .. }));
     }
 
     #[test]
