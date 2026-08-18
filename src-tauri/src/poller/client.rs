@@ -139,7 +139,8 @@ fn build_client(connect_timeout: Duration) -> Result<reqwest::Client, reqwest::E
         .referer(false)
         .https_only(false)
         .tls_built_in_root_certs(true)
-        // OS getaddrinfo order. Do not enable hickory (parallel / Happy Eyeballs DNS).
+        // OS getaddrinfo (no hickory). reqwest 0.12 has no knob for
+        // hyper-util's 300ms Happy Eyeballs connect race.
         .no_hickory_dns()
         .build()
 }
