@@ -1,0 +1,22 @@
+:root {
+  --bg-0: #0e1014;
+  --bg-1: #161a22;
+  --bg-2: #1e242e;
+  --border: #2a3140;
+  --text-0: #e6e8ee;
+  --text-1: #9aa3b2;
+  --text-2: #6b7380;
+  --ok: #3ddc97;
+  --warn: #f5b942;
+  --down: #f0534a;
+  --muted: #6b7380;
+  --accent: #6ea8fe;
+  --ok-bg: color-mix(in srgb, var(--ok) 12%, transparent);
+  --warn-bg: color-mix(in srgb, var(--warn) 12%, transparent);
+  --down-bg: color-mix(in srgb, var(--down) 12%, transparent);
+  --muted-bg: color-mix(in srgb, var(--muted) 12%, transparent);
+  --accent-bg: color-mix(in srgb, var(--accent) 14%, transparent);
+  --sans: -apple-system, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui,
+    sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}

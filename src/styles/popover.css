@@ -1,0 +1,37 @@
+.popover {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-1);
+  color: var(--text-0);
+}
+
+.popover-head {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 20px 24px;
+  text-align: center;
+}
+
+.empty-state p {
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 28ch;
+}
