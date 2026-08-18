@@ -25,6 +25,15 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             handle_activation(app, &args);
         }));
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                if let Some(window) = app.get_webview_window("popover") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }))
+            .plugin(tauri_plugin_autostart::Builder::new().build())
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
 
     // Plumbing only: never check or install on launch. Off unless `--features updater`.
@@ -55,7 +64,7 @@ pub fn run() {
             let hub = NotifyHub::new(settings.sound);
             let scheduler = Scheduler::new(SchedulerConfig {
                 services,
-                settings,
+                settings: settings.clone(),
                 history,
                 secrets: Arc::clone(&secrets),
                 events: Arc::new(TauriEvents(app.handle().clone())),
@@ -89,6 +98,7 @@ pub fn run() {
             if crate::notify::parse_focus_args(&args).is_some() {
                 handle_activation(app.handle(), &args);
             }
+            crate::platform::autostart::install(app.handle(), &settings);
             Ok(())
         })
         .on_window_event(ipc::windows::on_window_event)
@@ -114,6 +124,12 @@ pub fn run() {
             ipc::commands::snooze,
             ipc::commands::open_action,
             ipc::commands::open_detail,
+            ipc::commands::get_settings,
+            ipc::commands::update_settings,
+            ipc::commands::open_settings,
+            ipc::commands::maybe_ask_launch_at_login,
+            ipc::commands::pending_launch_prompt,
+            ipc::commands::answer_launch_prompt,
             platform::tray::should_suppress_blur,
         ])
         .build(tauri::generate_context!())

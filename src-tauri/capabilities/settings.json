@@ -3,5 +3,10 @@
   "identifier": "settings",
   "description": "Preferences window. No secret-reveal commands.",
   "windows": ["settings"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "allow-settings"
+  ]
 }

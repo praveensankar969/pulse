@@ -12,6 +12,7 @@ use crate::domain::{CheckResult, CompactSample, ServiceView};
 
 use crate::domain::{CheckResult, ServiceDraft, ServiceView};
 use crate::notify::request_permission_on_notify_save;
+use crate::domain::{AppSettings, CheckResult, ServiceView};
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
@@ -296,6 +297,81 @@ pub fn open_action(state: State<'_, AppState>, id: String) -> Result<(), String>
         .as_deref()
         .unwrap_or(view.service.url.as_str());
     open_http_url(url)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
+    state
+        .store
+        .lock()
+        .expect("config store lock")
+        .load_settings()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn update_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> Result<AppSettings, String> {
+    crate::platform::autostart::validate_hotkey(&settings)?;
+    let mut settings = settings;
+    if settings.launch_at_login {
+        settings.asked_launch_at_login = true;
+    }
+    state
+        .store
+        .lock()
+        .expect("config store lock")
+        .save_settings(&settings)
+        .map_err(|error| error.to_string())?;
+    crate::platform::autostart::persist_side_effects(&app, &settings)?;
+    crate::platform::autostart::maybe_ask_after_save(&app, &settings);
+    state
+        .store
+        .lock()
+        .expect("config store lock")
+        .load_settings()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn open_settings(app: AppHandle) {
+    crate::platform::autostart::open_settings(&app);
+}
+
+/// First-save hook (editor / settings). Opens Settings if the prompt is still pending.
+#[tauri::command(rename_all = "camelCase")]
+pub fn maybe_ask_launch_at_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<AppSettings, String> {
+    let settings = state
+        .store
+        .lock()
+        .expect("config store lock")
+        .load_settings()
+        .map_err(|error| error.to_string())?;
+    if crate::platform::autostart::maybe_ask_after_save(&app, &settings) {
+        crate::platform::autostart::open_settings(&app);
+    }
+    state
+        .store
+        .lock()
+        .expect("config store lock")
+        .load_settings()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn pending_launch_prompt() -> bool {
+    crate::platform::autostart::take_pending_launch_prompt()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn answer_launch_prompt(app: AppHandle, enable: bool) -> Result<AppSettings, String> {
+    crate::platform::autostart::answer_launch_prompt(&app, enable)
 }
 
 fn open_http_url(url: &str) -> Result<(), String> {

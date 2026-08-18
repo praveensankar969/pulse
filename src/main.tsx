@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { startStore } from "./state/store";
 import { EditorWindow } from "./ui/editor/EditorWindow";
 import { Popover } from "./ui/popover/Popover";
+import { SettingsWindow } from "./ui/settings/SettingsWindow";
 import "./styles/tokens.css";
 import "./styles/reset.css";
 import "./styles/popover.css";
@@ -63,5 +64,23 @@ createRoot(document.getElementById("root") as HTMLElement).render(
         </div>
       </main>
     )}
+import "./styles/settings.css";
+
+function windowLabel(): string {
+  try {
+    return getCurrentWindow().label;
+  } catch {
+    return "popover";
+  }
+}
+
+const label = windowLabel();
+if (label !== "settings") {
+  void startStore();
+}
+
+createRoot(document.getElementById("root") as HTMLElement).render(
+  <StrictMode>
+    {label === "settings" ? <SettingsWindow /> : <Popover />}
   </StrictMode>,
 );

@@ -7,8 +7,8 @@ use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuEvent};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Emitter, Listener, LogicalPosition, Manager, PhysicalPosition, Position, Size,
-    State, WebviewWindow,
+    AppHandle, Listener, LogicalPosition, Manager, PhysicalPosition, Position, Size, State,
+    WebviewWindow,
 };
 
 use crate::domain::{ServiceView, UiState};
@@ -360,13 +360,7 @@ fn handle_menu<R: tauri::Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
 }
 
 fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        return;
-    }
-    // TODO: create settings window (PR 16)
-    let _ = app.emit("pulse://open-settings", ());
+    crate::platform::autostart::open_settings(app);
 }
 
 fn handle_tray_event<R: tauri::Runtime>(
@@ -412,6 +406,11 @@ fn rect_is_overflow(rect: &tauri::Rect) -> bool {
 /// Show-only + work-area. Not gated on a delivered Click (GetRect-fail / overflow).
 pub fn show_popover_if_hidden<R: tauri::Runtime>(app: &AppHandle<R>) {
     apply_visibility(app, None, true);
+}
+
+/// Global hotkey: same toggle as a tray click without a status-item rect.
+pub fn toggle_popover<R: tauri::Runtime>(app: &AppHandle<R>) {
+    apply_visibility(app, None, false);
 }
 
 fn apply_visibility<R: tauri::Runtime>(

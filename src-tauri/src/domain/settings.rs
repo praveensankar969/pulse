@@ -6,6 +6,10 @@ use super::ValidationError;
 pub const DEFAULT_INTERVAL_SEC: u32 = 60;
 pub const DEFAULT_TIMEOUT_MS: u32 = 10_000;
 pub const DEFAULT_FAIL_THRESHOLD: u32 = 3;
+pub const DEFAULT_HOTKEY: &str = "CommandOrControl+Shift+U";
+
+/// Settings help, verbatim. A still-up homelab host keeps Pulse online.
+pub const MIXED_REACHABILITY_HELP: &str = "If any check succeeds, Pulse assumes the network is up. A homelab box that still answers will keep Pulse online even if the public internet is gone.";
 
 /// Settings help, verbatim. A still-up homelab host keeps Pulse online.
 pub const MIXED_REACHABILITY_HELP: &str = "If any check succeeds, Pulse assumes the network is up. A homelab box that still answers will keep Pulse online even if the public internet is gone.";
@@ -66,6 +70,15 @@ impl Default for AppSettings {
 }
 
 impl QuietHours {
+    /// Weekdays 22:00–08:00. Overnight Friday continues into Saturday morning.
+    pub fn weekdays_overnight() -> Self {
+        Self {
+            start: "22:00".into(),
+            end: "08:00".into(),
+            days: vec![1, 2, 3, 4, 5],
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         if !valid_hhmm(&self.start) || !valid_hhmm(&self.end) {
             return Err(ValidationError::QuietHours);
@@ -123,6 +136,39 @@ impl AppSettings {
     }
 }
 
+/// None / blank means the default global hotkey.
+pub fn resolved_hotkey(settings: &AppSettings) -> String {
+    match settings.hotkey.as_deref().map(str::trim) {
+        None | Some("") => DEFAULT_HOTKEY.to_string(),
+        Some(value) => value.to_string(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchPromptAction {
+    Skip,
+    MarkAsked,
+    Ask,
+}
+
+/// One prompt after first save. Checking the box yourself counts as the answer.
+pub fn launch_prompt_action(settings: &AppSettings) -> LaunchPromptAction {
+    if settings.asked_launch_at_login {
+        LaunchPromptAction::Skip
+    } else if settings.launch_at_login {
+        LaunchPromptAction::MarkAsked
+    } else {
+        LaunchPromptAction::Ask
+    }
+}
+
+pub fn apply_launch_prompt(settings: &mut AppSettings, enable: bool) {
+    settings.asked_launch_at_login = true;
+    if enable {
+        settings.launch_at_login = true;
+    }
+}
+
 fn valid_hhmm(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 5 || bytes[2] != b':' {
@@ -135,4 +181,59 @@ fn valid_hhmm(value: &str) -> bool {
         return false;
     };
     hour <= 23 && minute <= 59
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mixed_reachability_help_is_verbatim() {
+        assert_eq!(
+            MIXED_REACHABILITY_HELP,
+            "If any check succeeds, Pulse assumes the network is up. A homelab box that still answers will keep Pulse online even if the public internet is gone."
+        );
+    }
+
+    #[test]
+    fn default_hotkey_is_command_or_control_shift_u() {
+        assert_eq!(DEFAULT_HOTKEY, "CommandOrControl+Shift+U");
+        assert_eq!(
+            resolved_hotkey(&AppSettings::default()),
+            DEFAULT_HOTKEY
+        );
+        let custom = AppSettings {
+            hotkey: Some("CommandOrControl+Shift+P".into()),
+            ..AppSettings::default()
+        };
+        assert_eq!(resolved_hotkey(&custom), "CommandOrControl+Shift+P");
+        let blank = AppSettings {
+            hotkey: Some("  ".into()),
+            ..AppSettings::default()
+        };
+        assert_eq!(resolved_hotkey(&blank), DEFAULT_HOTKEY);
+    }
+
+    #[test]
+    fn launch_prompt_fires_once_after_first_save() {
+        let mut settings = AppSettings::default();
+        assert!(!settings.launch_at_login);
+        assert_eq!(launch_prompt_action(&settings), LaunchPromptAction::Ask);
+        apply_launch_prompt(&mut settings, false);
+        assert!(settings.asked_launch_at_login);
+        assert!(!settings.launch_at_login);
+        assert_eq!(launch_prompt_action(&settings), LaunchPromptAction::Skip);
+    }
+
+    #[test]
+    fn enabling_launch_at_login_marks_asked() {
+        let settings = AppSettings {
+            launch_at_login: true,
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            launch_prompt_action(&settings),
+            LaunchPromptAction::MarkAsked
+        );
+    }
 }

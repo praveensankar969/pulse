@@ -59,6 +59,10 @@
   background: #262c38;
 }
 
+[data-theme="light"] .icon-btn:hover {
+  background: #e2e6ee;
+}
+
 .icon-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -140,6 +144,11 @@
 .service-row:hover,
 .service-row.is-selected {
   background: #222833;
+}
+
+[data-theme="light"] .service-row:hover,
+[data-theme="light"] .service-row.is-selected {
+  background: #e8ebf0;
 }
 
 .service-row:focus-visible {

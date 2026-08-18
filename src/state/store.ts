@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { sortServices } from "../lib/format";
 import * as ipc from "../lib/ipc";
+import { applyTheme } from "../lib/theme";
 import type { ServiceView } from "../lib/types";
 
 export type PulseState = {
@@ -207,6 +208,17 @@ export async function startStore(): Promise<() => void> {
       }),
     );
     unlisten.push(await ipc.bindBlurProtocol());
+    try {
+      const settings = await ipc.getSettings();
+      applyTheme(settings.theme);
+      unlisten.push(
+        await ipc.onSettings((next) => {
+          applyTheme(next.theme);
+        }),
+      );
+    } catch {
+      // Settings IPC is best-effort for the popover theme.
+    }
   } catch {
     // Not running inside Tauri.
   }

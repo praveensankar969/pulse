@@ -1,0 +1,40 @@
+[[permission]]
+identifier = "allow-get-settings"
+description = "Read AppSettings from config.json."
+commands.allow = ["get_settings"]
+
+[[permission]]
+identifier = "allow-update-settings"
+description = "Persist AppSettings and apply autostart / hotkey / theme."
+commands.allow = ["update_settings"]
+
+[[permission]]
+identifier = "allow-open-settings"
+description = "Create or focus the settings window."
+commands.allow = ["open_settings"]
+
+[[permission]]
+identifier = "allow-maybe-ask-launch-at-login"
+description = "One-shot launch-at-login prompt after first save."
+commands.allow = ["maybe_ask_launch_at_login"]
+
+[[permission]]
+identifier = "allow-pending-launch-prompt"
+description = "Consume the pending launch-at-login prompt flag."
+commands.allow = ["pending_launch_prompt"]
+
+[[permission]]
+identifier = "allow-answer-launch-prompt"
+description = "Record the launch-at-login prompt answer."
+commands.allow = ["answer_launch_prompt"]
+
+[[set]]
+identifier = "allow-settings"
+description = "Settings window: read/write preferences and the launch-at-login prompt."
+permissions = [
+    "allow-get-settings",
+    "allow-update-settings",
+    "allow-maybe-ask-launch-at-login",
+    "allow-pending-launch-prompt",
+    "allow-answer-launch-prompt",
+]

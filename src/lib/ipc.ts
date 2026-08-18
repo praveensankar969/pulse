@@ -8,6 +8,7 @@ import type {
   ServiceDraft,
   ServiceView,
 } from "./types";
+import type { AppSettings, CheckResult, ServiceView } from "./types";
 
 export type FocusServicePayload = { id?: string };
 export type PollerDeadPayload = { at: string };
@@ -70,7 +71,27 @@ export async function hidePopover(): Promise<void> {
 }
 
 export async function openSettings(): Promise<void> {
-  await emit("pulse://open-settings");
+  await invoke("open_settings");
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  return invoke<AppSettings>("get_settings");
+}
+
+export async function updateSettings(settings: AppSettings): Promise<AppSettings> {
+  return invoke<AppSettings>("update_settings", { settings });
+}
+
+export async function maybeAskLaunchAtLogin(): Promise<AppSettings> {
+  return invoke<AppSettings>("maybe_ask_launch_at_login");
+}
+
+export async function pendingLaunchPrompt(): Promise<boolean> {
+  return invoke<boolean>("pending_launch_prompt");
+}
+
+export async function answerLaunchPrompt(enable: boolean): Promise<AppSettings> {
+  return invoke<AppSettings>("answer_launch_prompt", { enable });
 }
 
 export async function openEditor(id?: string): Promise<void> {
@@ -163,6 +184,20 @@ export async function onOffline(
 ): Promise<UnlistenFn> {
   return listen<OfflinePayload>("pulse://offline", (event) => {
     handler(event.payload);
+  });
+}
+
+export async function onSettings(
+  handler: (settings: AppSettings) => void,
+): Promise<UnlistenFn> {
+  return listen<AppSettings>("pulse://settings", (event) => {
+    handler(event.payload);
+  });
+}
+
+export async function onAskLaunchAtLogin(handler: () => void): Promise<UnlistenFn> {
+  return listen("pulse://ask-launch-at-login", () => {
+    handler();
   });
 }
 

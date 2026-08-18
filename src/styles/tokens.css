@@ -21,3 +21,17 @@
     sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
+
+[data-theme="light"] {
+  --bg-0: #f4f5f7;
+  --bg-1: #ffffff;
+  --bg-2: #eef0f4;
+  --border: #d5d9e2;
+  --text-0: #16181d;
+  --text-1: #4b5563;
+  --text-2: #6b7380;
+  --ok-bg: color-mix(in srgb, var(--ok) 12%, var(--bg-0));
+  --warn-bg: color-mix(in srgb, var(--warn) 12%, var(--bg-0));
+  --down-bg: color-mix(in srgb, var(--down) 12%, var(--bg-0));
+  --muted-bg: color-mix(in srgb, var(--muted) 12%, var(--bg-0));
+}
