@@ -595,7 +595,7 @@ fn place_popover<R: tauri::Runtime>(window: &WebviewWindow<R>, rect: &tauri::Rec
     };
     let cx = (x + width / 2.0) as i32;
     let cy = (y + height / 2.0) as i32;
-    let (left, top) = match work_area_containing(window, cx, cy) {
+    let (left, top) = match monitor_work_area_for_point(window, cx, cy) {
         Some(area) => clamp_to_work_area(
             left as i32,
             top as i32,
@@ -688,15 +688,6 @@ fn monitor_bounds(monitor: &tauri::Monitor) -> WorkArea {
     (pos.x, pos.y, size.width, size.height)
 }
 
-fn work_area_containing<R: tauri::Runtime>(
-    window: &WebviewWindow<R>,
-    px: i32,
-    py: i32,
-) -> Option<WorkArea> {
-    monitor_work_area_for_point(window, px, py)
-        .filter(|(x, y, w, h)| px >= *x && py >= *y && px < *x + *w as i32 && py < *y + *h as i32)
-}
-
 fn monitor_work_area_for_point<R: tauri::Runtime>(
     window: &WebviewWindow<R>,
     px: i32,
@@ -713,7 +704,7 @@ fn monitor_work_area_for_point<R: tauri::Runtime>(
 
 fn fallback_work_area<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Option<WorkArea> {
     if let Ok(cursor) = window.cursor_position() {
-        if let Some(area) = work_area_containing(window, cursor.x as i32, cursor.y as i32) {
+        if let Some(area) = monitor_work_area_for_point(window, cursor.x as i32, cursor.y as i32) {
             return Some(area);
         }
     }
@@ -724,7 +715,7 @@ fn fallback_work_area<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Option<Wo
                 Position::Physical(pos) => (pos.x, pos.y),
                 Position::Logical(pos) => ((pos.x * scale) as i32, (pos.y * scale) as i32),
             };
-            if let Some(area) = work_area_containing(window, x, y) {
+            if let Some(area) = monitor_work_area_for_point(window, x, y) {
                 return Some(area);
             }
         }
@@ -1327,6 +1318,12 @@ mod tests {
         assert_eq!(monitor_containing(&monitors, 10, 10), Some(0));
         assert_eq!(monitor_containing(&monitors, 2000, 100), Some(1));
         assert_eq!(monitor_containing(&monitors, -20, 10), None);
+        // Taskbar / menu-bar chrome is outside the work area but still on the monitor.
+        assert_eq!(monitor_containing(&monitors, 1900, 1060), Some(0));
+        let work = (0, 0, 1920, 1040);
+        let (x, y) = clamp_to_work_area(1900, 1060, 372, 480, work, 12);
+        assert_eq!(x, 1920 - 372 - 12);
+        assert_eq!(y, 1040 - 480 - 12);
     }
 
     #[test]
