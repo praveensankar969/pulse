@@ -1,6 +1,6 @@
 import {
+  formatAssertionValue,
   formatExpectedStatus,
-  formatJson,
   formatLatency,
   formatOp,
   isShownError,
@@ -56,8 +56,8 @@ export function Evidence({ view, last, now, onCopy, copied }: Props) {
               <tr key={`${row.path}-${row.op}-${index}`}>
                 <td>{row.path}</td>
                 <td>{formatOp(row.op)}</td>
-                <td>{formatJson(row.expected)}</td>
-                <td>{formatJson(row.actual)}</td>
+                <td>{formatAssertionValue(row.expected)}</td>
+                <td>{formatAssertionValue(row.actual)}</td>
                 <td className={row.ok ? "pass" : "fail"}>
                   {row.ok ? "pass" : "fail"}
                 </td>

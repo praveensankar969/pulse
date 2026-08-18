@@ -221,7 +221,7 @@ pub fn open_action(state: State<'_, AppState>, id: String) -> Result<(), Schedul
         .action_url
         .as_deref()
         .unwrap_or(view.service.url.as_str());
-    open_url(url)
+    open::that(url).map_err(|_| SchedulerError::Open)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -236,26 +236,6 @@ fn parse_snooze_until(until: Option<String>) -> Result<Option<DateTime<Utc>>, Sc
             .map(|parsed| Some(parsed.with_timezone(&Utc)))
             .map_err(|_| SchedulerError::InvalidSnooze),
     }
-}
-
-fn open_url(url: &str) -> Result<(), SchedulerError> {
-    let spawned = {
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("cmd")
-                .args(["/C", "start", "", url])
-                .spawn()
-        }
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open").arg(url).spawn()
-        }
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            std::process::Command::new("xdg-open").arg(url).spawn()
-        }
-    };
-    spawned.map(|_| ()).map_err(|_| SchedulerError::Open)
 }
 
 #[tauri::command(rename_all = "camelCase")]

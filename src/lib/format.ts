@@ -269,6 +269,12 @@ export function formatJson(value: unknown): string {
   }
 }
 
+/** Omitted assertion expected/actual (serde skip). Never-evaluated rows stay `—`. */
+export function formatAssertionValue(value: unknown): string {
+  if (value === undefined) return "<missing>";
+  return formatJson(value);
+}
+
 export function reasonLine(
   view: ServiceView,
   last: CheckResult | null,
