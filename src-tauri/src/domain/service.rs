@@ -41,16 +41,18 @@ pub(crate) fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HttpMethod {
+    #[default]
     Get,
     Head,
     Post,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ExpectedStatus {
+    #[default]
     TwoXx,
     Code(u16),
     Codes(Vec<u16>),
@@ -136,6 +138,7 @@ fn is_zero_u64(value: &u64) -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct HeaderSpec {
     pub key: String,
+    #[serde(default)]
     pub secret: bool,
     /// Plaintext only when secret == false. Secret values never sit here on disk.
     #[serde(skip_serializing_if = "Option::is_none")]

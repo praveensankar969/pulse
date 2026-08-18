@@ -427,7 +427,9 @@ pub fn show_popover_if_hidden<R: tauri::Runtime>(app: &AppHandle<R>) {
 
 /// Global hotkey: same placement as a left click when we have a tray rect.
 pub fn toggle_popover<R: tauri::Runtime>(app: &AppHandle<R>) {
-    let rect = app.try_state::<TrayHandle>().and_then(|tray| tray.last_rect());
+    let rect = app
+        .try_state::<TrayHandle>()
+        .and_then(|tray| tray.last_rect());
     apply_visibility(app, rect.as_ref(), false);
 }
 

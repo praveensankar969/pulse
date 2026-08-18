@@ -30,6 +30,12 @@ pub enum StoreError {
     NotFound,
     #[error("could not store secret header `{key}` in the OS keychain: {message}")]
     Keychain { key: String, message: String },
+    #[error(
+        "This file contains secret values. Re-import with Include secrets, or strip the values."
+    )]
+    SecretsWithoutFlag,
+    #[error("invalid export:\n{0}")]
+    InvalidExport(String),
 }
 
 impl From<SecretError> for StoreError {
@@ -300,12 +306,12 @@ pub fn strip_secret_values(services: &mut [Service]) -> bool {
     dirty
 }
 
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, StoreError> {
+pub(crate) fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, StoreError> {
     let bytes = fs::read(path)?;
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreError> {
+pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreError> {
     let mut json = serde_json::to_string_pretty(value)?;
     if !json.ends_with('\n') {
         json.push('\n');

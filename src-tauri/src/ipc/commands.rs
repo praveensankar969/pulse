@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, State, WebviewWindow};
@@ -22,7 +23,10 @@ use crate::notify::{request_permission_on_notify_save, NotifyHub};
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
-use crate::store::{BeginRevealResponse, ConfigStore, RevealError, RevealRegistry, SecretStore};
+use crate::store::{
+    confirm_message, export_filename, BeginRevealResponse, ConfigStore, ImportOutcome, RevealError,
+    RevealRegistry, SecretStore,
+};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -410,6 +414,166 @@ pub fn pending_launch_prompt() -> bool {
 #[tauri::command(rename_all = "camelCase")]
 pub fn answer_launch_prompt(app: AppHandle, enable: bool) -> Result<AppSettings, String> {
     crate::platform::autostart::answer_launch_prompt(&app, enable)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TransferError {
+    #[error("canceled")]
+    Canceled,
+    #[error("{0}")]
+    Store(#[from] crate::store::StoreError),
+    #[error("{0}")]
+    Dialog(String),
+}
+
+impl serde::Serialize for TransferError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    include_secrets: bool,
+    include_settings: Option<bool>,
+) -> Result<String, TransferError> {
+    let include_settings = include_settings.unwrap_or(false);
+    let path = save_json_path(&app, export_filename(include_secrets)).await?;
+    {
+        let store = state.store.lock().expect("config store lock");
+        store.export_to_path(&state.secrets, &path, include_secrets, include_settings)?;
+        let settings = store.load_settings().map_err(TransferError::from)?;
+        crate::platform::autostart::persist_side_effects(&app, &settings)
+            .map_err(TransferError::Dialog)?;
+    }
+    Ok(path.display().to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn import_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    include_secrets: bool,
+    replace_settings: Option<bool>,
+) -> Result<ImportOutcome, TransferError> {
+    let replace_settings = replace_settings.unwrap_or(false);
+    let path = pick_json_path(&app).await?;
+    let bytes = std::fs::read(&path).map_err(|error| TransferError::Dialog(error.to_string()))?;
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("export.json")
+        .to_string();
+    let preview = ConfigStore::preview_import(&bytes, &filename, include_secrets)?;
+    if !confirm_import(&app, &confirm_message(&preview, include_secrets)).await? {
+        return Err(TransferError::Canceled);
+    }
+    let was_empty = state.scheduler.views().is_empty();
+    let (outcome, services, settings) = {
+        let store = state.store.lock().expect("config store lock");
+        store.import_from_bytes(&state.secrets, &bytes, include_secrets, replace_settings)?
+    };
+    for service in services {
+        state.scheduler.upsert(service);
+    }
+    if was_empty && outcome.added > 0 {
+        crate::platform::autostart::notify_service_created();
+    }
+    if let Some(settings) = settings {
+        crate::platform::autostart::validate_hotkey(&settings).map_err(TransferError::Dialog)?;
+        crate::platform::autostart::apply_hotkey(&app, &settings).map_err(TransferError::Dialog)?;
+        crate::platform::autostart::persist_side_effects(&app, &settings)
+            .map_err(TransferError::Dialog)?;
+    }
+    Ok(outcome)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn reset_all(app: AppHandle, state: State<'_, AppState>) -> Result<(), TransferError> {
+    {
+        let store = state.store.lock().expect("config store lock");
+        state
+            .scheduler
+            .with_history(|history| store.reset_all(&state.secrets, history))?;
+    }
+    state.scheduler.clear_services();
+    let settings = AppSettings::default();
+    crate::platform::autostart::apply_hotkey(&app, &settings).map_err(TransferError::Dialog)?;
+    crate::platform::autostart::persist_side_effects(&app, &settings)
+        .map_err(TransferError::Dialog)?;
+    Ok(())
+}
+
+async fn pick_json_path(app: &AppHandle) -> Result<PathBuf, TransferError> {
+    dialog_path(app, DialogKind::Open, None).await
+}
+
+async fn save_json_path(app: &AppHandle, filename: &str) -> Result<PathBuf, TransferError> {
+    dialog_path(app, DialogKind::Save, Some(filename)).await
+}
+
+enum DialogKind {
+    Open,
+    Save,
+}
+
+async fn dialog_path(
+    app: &AppHandle,
+    kind: DialogKind,
+    filename: Option<&str>,
+) -> Result<PathBuf, TransferError> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut builder = app.dialog().file().add_filter("JSON", &["json"]);
+        if let Some(filename) = filename {
+            builder = builder.set_file_name(filename);
+        }
+        match kind {
+            DialogKind::Open => builder.pick_file(move |path| {
+                let _ = tx.send(path);
+            }),
+            DialogKind::Save => builder.save_file(move |path| {
+                let _ = tx.send(path);
+            }),
+        }
+        match rx.await {
+            Ok(Some(file)) => file
+                .into_path()
+                .map_err(|error| TransferError::Dialog(error.to_string())),
+            Ok(None) | Err(_) => Err(TransferError::Canceled),
+        }
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, kind, filename);
+        Err(TransferError::Dialog("dialogs are desktop-only".into()))
+    }
+}
+
+async fn confirm_import(app: &AppHandle, message: &str) -> Result<bool, TransferError> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.dialog()
+            .message(message)
+            .title("Import")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancel)
+            .show(move |ok| {
+                let _ = tx.send(ok);
+            });
+        rx.await.map_err(|_| TransferError::Canceled)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, message);
+        Err(TransferError::Dialog("dialogs are desktop-only".into()))
+    }
 }
 
 fn open_http_url(url: &str) -> Result<(), String> {

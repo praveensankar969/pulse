@@ -28,6 +28,21 @@ identifier = "allow-answer-launch-prompt"
 description = "Record the launch-at-login prompt answer."
 commands.allow = ["answer_launch_prompt"]
 
+[[permission]]
+identifier = "allow-export-config"
+description = "Export services through a Rust-side save dialog. No path from JS."
+commands.allow = ["export_config"]
+
+[[permission]]
+identifier = "allow-import-config"
+description = "Import services through a Rust-side open dialog. No path from JS."
+commands.allow = ["import_config"]
+
+[[permission]]
+identifier = "allow-reset-all"
+description = "Wipe config JSON, SQLite history, and keychain items."
+commands.allow = ["reset_all"]
+
 [[set]]
 identifier = "allow-settings"
 description = "Settings window: read/write preferences and the launch-at-login prompt."
@@ -37,4 +52,7 @@ permissions = [
     "allow-maybe-ask-launch-at-login",
     "allow-pending-launch-prompt",
     "allow-answer-launch-prompt",
+    "allow-export-config",
+    "allow-import-config",
+    "allow-reset-all",
 ]

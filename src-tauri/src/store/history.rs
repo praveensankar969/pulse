@@ -378,6 +378,16 @@ impl History {
         tx.commit()?;
         Ok(())
     }
+
+    /// Wipe runtime_state, last_results, and check_samples for every service.
+    pub fn clear_all(&self) -> Result<(), StoreError> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM runtime_state", [])?;
+        tx.execute("DELETE FROM last_results", [])?;
+        tx.execute("DELETE FROM check_samples", [])?;
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 fn configure(conn: &Connection) -> Result<(), StoreError> {
@@ -1128,6 +1138,39 @@ mod tests {
         assert!(history.get_runtime("keep").unwrap().is_some());
         assert!(history.last_result("keep").unwrap().is_some());
         assert_eq!(history.samples_24h("keep", at).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn clear_all_wipes_every_table() {
+        let (_dir, history) = open_temp();
+        let at = at_ms(1_700_000_000_000);
+        history.put_runtime("keep", &down_state(at)).unwrap();
+        history
+            .put_last_result(
+                "keep",
+                &result_with(
+                    at,
+                    ServiceStatus::Down,
+                    OutcomeClass::Hard,
+                    Some(ErrorKind::Timeout),
+                ),
+            )
+            .unwrap();
+        history
+            .insert_sample(
+                "keep",
+                &sample(
+                    at,
+                    ServiceStatus::Down,
+                    OutcomeClass::Hard,
+                    Some(ErrorKind::Timeout),
+                ),
+            )
+            .unwrap();
+        history.clear_all().unwrap();
+        assert!(history.get_runtime("keep").unwrap().is_none());
+        assert!(history.last_result("keep").unwrap().is_none());
+        assert!(history.samples_24h("keep", at).unwrap().is_empty());
     }
 
     #[test]

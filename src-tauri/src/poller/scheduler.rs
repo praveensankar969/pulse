@@ -300,6 +300,12 @@ impl SchedulerHandle {
         self.inner.mark_dirty();
     }
 
+    pub fn clear_services(&self) {
+        self.inner.abort_all();
+        self.inner.slots.lock().expect("slots lock").clear();
+        self.inner.mark_dirty();
+    }
+
     pub fn set_paused(&self, id: &str, paused: bool) -> Result<ServiceView, SchedulerError> {
         self.inner.set_paused(id, paused)?;
         self.inner.mark_dirty();

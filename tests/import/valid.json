@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "includeSecrets": false,
+  "services": [
+    {
+      "id": "01JABCDEF0000000000000API",
+      "name": "Payments API",
+      "url": "https://pay.harbor.dev/health",
+      "method": "GET",
+      "headers": [
+        { "key": "Authorization", "secret": true },
+        { "key": "Accept", "secret": false, "value": "application/json" }
+      ],
+      "intervalSec": 60,
+      "timeoutMs": 10000,
+      "expectedStatus": "2xx",
+      "assertions": [
+        { "path": "status", "op": "equals", "value": "ok" }
+      ],
+      "notify": true,
+      "alwaysAlert": true,
+      "paused": false,
+      "followRedirects": true,
+      "group": "prod"
+    },
+    {
+      "id": "01JABCDEF0000000000000NAS",
+      "name": "NAS",
+      "url": "https://nas.home.arpa/api/v2.0/system/info"
+    }
+  ]
+}

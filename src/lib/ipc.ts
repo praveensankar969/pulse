@@ -117,6 +117,31 @@ export async function answerLaunchPrompt(enable: boolean): Promise<AppSettings> 
   return invoke<AppSettings>("answer_launch_prompt", { enable });
 }
 
+export type ImportResult = { added: number; updated: number };
+
+export async function exportConfig(opts: {
+  includeSecrets: boolean;
+  includeSettings?: boolean;
+}): Promise<string> {
+  return invoke<string>("export_config", opts);
+}
+
+export async function importConfig(opts: {
+  includeSecrets: boolean;
+  replaceSettings?: boolean;
+}): Promise<ImportResult> {
+  return invoke<ImportResult>("import_config", opts);
+}
+
+export async function resetAll(): Promise<void> {
+  await invoke("reset_all");
+}
+
+export function isCanceled(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return message === "canceled" || message.endsWith("canceled");
+}
+
 export async function openEditor(id?: string): Promise<void> {
   await invoke("open_editor", { id: id ?? null });
 }

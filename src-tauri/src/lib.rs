@@ -33,7 +33,8 @@ pub fn run() {
                 }
             }))
             .plugin(tauri_plugin_autostart::Builder::new().build())
-            .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_dialog::init());
     }
 
     // Plumbing only: never check or install on launch. Off unless `--features updater`.
@@ -134,6 +135,9 @@ pub fn run() {
             ipc::commands::maybe_ask_launch_at_login,
             ipc::commands::pending_launch_prompt,
             ipc::commands::answer_launch_prompt,
+            ipc::commands::export_config,
+            ipc::commands::import_config,
+            ipc::commands::reset_all,
             platform::tray::should_suppress_blur,
         ])
         .build(tauri::generate_context!())

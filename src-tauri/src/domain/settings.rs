@@ -198,10 +198,7 @@ mod tests {
     #[test]
     fn default_hotkey_is_command_or_control_shift_u() {
         assert_eq!(DEFAULT_HOTKEY, "CommandOrControl+Shift+U");
-        assert_eq!(
-            resolved_hotkey(&AppSettings::default()),
-            DEFAULT_HOTKEY
-        );
+        assert_eq!(resolved_hotkey(&AppSettings::default()), DEFAULT_HOTKEY);
         let custom = AppSettings {
             hotkey: Some("CommandOrControl+Shift+P".into()),
             ..AppSettings::default()

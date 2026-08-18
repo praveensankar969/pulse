@@ -2,10 +2,14 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   answerLaunchPrompt,
+  exportConfig,
   getSettings,
+  importConfig,
+  isCanceled,
   onAskLaunchAtLogin,
   onSettings,
   pendingLaunchPrompt,
+  resetAll,
   updateSettings,
 } from "../../lib/ipc";
 import {
@@ -50,6 +54,8 @@ export function SettingsWindow() {
   const [askLaunch, setAskLaunch] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [includeSecrets, setIncludeSecrets] = useState(false);
+  const [includeSettings, setIncludeSettings] = useState(false);
+  const [replaceSettings, setReplaceSettings] = useState(false);
   const [resetTyped, setResetTyped] = useState("");
   const [failDraft, setFailDraft] = useState("3");
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -60,6 +66,8 @@ export function SettingsWindow() {
     const tick = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(tick);
   }, []);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -188,6 +196,57 @@ export function SettingsWindow() {
     setFailDraft(String(clamped));
     if (clamped !== settings.failThreshold) {
       void patch({ failThreshold: clamped });
+    }
+  }
+
+  async function runExport(): Promise<void> {
+    setError(null);
+    setStatus(null);
+    setBusy(true);
+    try {
+      const path = await exportConfig({ includeSecrets, includeSettings });
+      setStatus(`Exported to ${path}`);
+    } catch (cause) {
+      if (!isCanceled(cause)) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runImport(): Promise<void> {
+    setError(null);
+    setStatus(null);
+    setBusy(true);
+    try {
+      const result = await importConfig({
+        includeSecrets,
+        replaceSettings,
+      });
+      setStatus(`Imported ${result.added} added, ${result.updated} updated.`);
+    } catch (cause) {
+      if (!isCanceled(cause)) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runReset(): Promise<void> {
+    if (resetTyped !== "RESET") return;
+    setError(null);
+    setStatus(null);
+    setBusy(true);
+    try {
+      await resetAll();
+      setResetTyped("");
+      setStatus("Pulse data was reset.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -447,13 +506,31 @@ export function SettingsWindow() {
         {pane === "data" ? (
           <section className="settings-pane" data-pane="data">
             <div className="data-actions">
-              <button type="button" className="btn" disabled>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={() => void runExport()}
+              >
                 Export JSON
               </button>
-              <button type="button" className="btn" disabled>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={() => void runImport()}
+              >
                 Import…
               </button>
             </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={includeSettings}
+                onChange={(event) => setIncludeSettings(event.target.checked)}
+              />
+              <span>Include settings</span>
+            </label>
             <label className="check-row warn-row">
               <input
                 type="checkbox"
@@ -468,9 +545,15 @@ export function SettingsWindow() {
                 commit it. Do not mail it.
               </p>
             ) : null}
-            <p className="hint">
-              Export, import, and reset land in a later update.
-            </p>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={replaceSettings}
+                onChange={(event) => setReplaceSettings(event.target.checked)}
+              />
+              <span>Replace settings on import</span>
+            </label>
+            {status ? <p className="hint">{status}</p> : null}
             <hr />
             <label className="field">
               <span>
@@ -487,8 +570,8 @@ export function SettingsWindow() {
             <button
               type="button"
               className="btn danger"
-              disabled
-              title="Reset lands in a later update."
+              disabled={busy || resetTyped !== "RESET"}
+              onClick={() => void runReset()}
             >
               Reset Pulse
             </button>

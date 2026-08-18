@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    {
+      "name": "Local file",
+      "url": "file:///etc/passwd"
+    }
+  ]
+}

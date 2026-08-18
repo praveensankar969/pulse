@@ -1,10 +1,15 @@
 pub mod config;
+pub mod export;
 pub mod history;
 pub mod migrate;
 pub mod paths;
 pub mod secrets;
 
 pub use config::{ConfigFile, ConfigStore, ServicesFile, StoreError};
+pub use export::{
+    confirm_message, export_filename, ExportFile, ExportService, ExportSettings, ImportOutcome,
+    ImportPreview, DEFAULT_EXPORT_FILENAME, SECRETS_EXPORT_FILENAME,
+};
 pub use history::History;
 pub use migrate::SCHEMA_VERSION;
 pub use paths::Paths;

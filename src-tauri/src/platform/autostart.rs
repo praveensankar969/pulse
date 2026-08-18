@@ -91,8 +91,7 @@ pub fn apply_hotkey<R: tauri::Runtime>(
                     .ok()
                     .and_then(|binding| register(binding).ok().map(|_| prev))
             });
-            *LAST_HOTKEY.lock().expect("hotkey lock") =
-                commit_hotkey(restored, hotkey, false);
+            *LAST_HOTKEY.lock().expect("hotkey lock") = commit_hotkey(restored, hotkey, false);
             Err(error.to_string())
         }
     }
@@ -134,10 +133,7 @@ pub fn persist_side_effects<R: tauri::Runtime>(
 /// Rust-side hook from `ConfigStore::save_service` on first create.
 /// Spawned so we never re-enter `AppState.store` under the caller's lock.
 pub fn notify_service_created() {
-    let callback = ON_SERVICE_CREATED
-        .lock()
-        .expect("create hook lock")
-        .clone();
+    let callback = ON_SERVICE_CREATED.lock().expect("create hook lock").clone();
     let Some(callback) = callback else {
         return;
     };
@@ -146,10 +142,7 @@ pub fn notify_service_created() {
     });
 }
 
-pub fn maybe_ask_after_save<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    settings: &AppSettings,
-) -> bool {
+pub fn maybe_ask_after_save<R: tauri::Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> bool {
     match launch_prompt_action(settings) {
         LaunchPromptAction::Skip => false,
         LaunchPromptAction::MarkAsked => {
