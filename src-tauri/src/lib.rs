@@ -17,6 +17,14 @@ pub fn run() {
         }));
     }
 
+    // Plumbing only: never check or install on launch. Off unless `--features updater`.
+    #[cfg(all(desktop, feature = "updater"))]
+    {
+        builder = builder
+            .plugin(tauri_plugin_process::init())
+            .plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
     builder
         .setup(|app| {
             // Accessory + Info.plist LSUIElement: no Dock icon.

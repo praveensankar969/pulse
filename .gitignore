@@ -16,6 +16,7 @@ dist-ssr
 target
 src-tauri/target
 *.local
+updater-artifacts.conf.json
 
 # Editor
 .vscode/*
