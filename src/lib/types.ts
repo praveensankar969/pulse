@@ -121,6 +121,8 @@ export interface ServiceView extends Service {
   lastResult?: CheckResult;
   lastCheckAt?: string;
   downSince?: string;
+  /** When the machine entered degraded. Independent of lastCheckAt. */
+  degradedSince?: string;
   /** Subtracted from now - downSince for displayed down duration. */
   downClockAdjustMs?: number;
   consecutiveHardFails: number;

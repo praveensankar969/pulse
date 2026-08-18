@@ -154,7 +154,10 @@ pub fn quit(app: AppHandle) {
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn open_action(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let view = state.scheduler.view(&id).map_err(|error| error.to_string())?;
+    let view = state
+        .scheduler
+        .view(&id)
+        .map_err(|error| error.to_string())?;
     let url = view
         .service
         .action_url

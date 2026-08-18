@@ -79,9 +79,13 @@ export function Popover() {
   }, [sorted, selectedId]);
 
   useEffect(() => {
-    const row = listRef.current?.querySelector(`[data-id="${selectedId}"]`);
+    if (!selectedId) return;
+    const row = listRef.current?.querySelector(
+      `[data-id="${CSS.escape(selectedId)}"]`,
+    );
     if (row instanceof HTMLElement) {
       row.scrollIntoView({ block: "nearest" });
+      if (document.activeElement !== row) row.focus();
     }
   }, [selectedId]);
 

@@ -11,10 +11,11 @@
   --down: #f0534a;
   --muted: #6b7380;
   --accent: #6ea8fe;
-  --ok-bg: color-mix(in srgb, var(--ok) 12%, transparent);
-  --warn-bg: color-mix(in srgb, var(--warn) 12%, transparent);
-  --down-bg: color-mix(in srgb, var(--down) 12%, transparent);
-  --muted-bg: color-mix(in srgb, var(--muted) 12%, transparent);
+  /* Mix onto --bg-0 so 12% fills stay opaque; transparent tints fail 4.5:1 on hover. */
+  --ok-bg: color-mix(in srgb, var(--ok) 12%, var(--bg-0));
+  --warn-bg: color-mix(in srgb, var(--warn) 12%, var(--bg-0));
+  --down-bg: color-mix(in srgb, var(--down) 12%, var(--bg-0));
+  --muted-bg: color-mix(in srgb, var(--muted) 12%, var(--bg-0));
   --accent-bg: color-mix(in srgb, var(--accent) 14%, transparent);
   --sans: -apple-system, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui,
     sans-serif;

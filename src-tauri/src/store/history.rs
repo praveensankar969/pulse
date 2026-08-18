@@ -45,8 +45,9 @@ impl History {
 
     pub fn get_runtime(&self, service_id: &str) -> Result<Option<RuntimeState>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT consecutive_hard_fails, status, down_since_ms, down_clock_adjust_ms,
-                    last_check_at_ms, snooze_until_ms, paused_at_ms, slept_at_ms
+            "SELECT consecutive_hard_fails, status, down_since_ms, degraded_since_ms,
+                    down_clock_adjust_ms, last_check_at_ms, snooze_until_ms,
+                    paused_at_ms, slept_at_ms
              FROM runtime_state WHERE service_id = ?1",
         )?;
         stmt.query_row(params![service_id], |row| {
@@ -54,20 +55,32 @@ impl History {
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, Option<i64>>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, Option<i64>>(3)?,
+                row.get::<_, i64>(4)?,
                 row.get::<_, Option<i64>>(5)?,
                 row.get::<_, Option<i64>>(6)?,
                 row.get::<_, Option<i64>>(7)?,
+                row.get::<_, Option<i64>>(8)?,
             ))
         })
         .optional()?
         .map(
-            |(fails, status, down_since, adjust, last_check, snooze, paused, slept)| {
+            |(
+                fails,
+                status,
+                down_since,
+                degraded_since,
+                adjust,
+                last_check,
+                snooze,
+                paused,
+                slept,
+            )| {
                 Ok(RuntimeState {
                     consecutive_hard_fails: u32_from_sql(fails, "consecutive_hard_fails")?,
                     status: parse_machine_status(&status)?,
                     down_since: opt_ms_to_dt(down_since)?,
+                    degraded_since: opt_ms_to_dt(degraded_since)?,
                     down_clock_adjust_ms: u64_from_sql(adjust, "down_clock_adjust_ms")?,
                     last_check_at: opt_ms_to_dt(last_check)?,
                     snooze_until: opt_ms_to_dt(snooze)?,
@@ -83,13 +96,14 @@ impl History {
         self.conn.execute(
             "INSERT INTO runtime_state (
                 service_id, consecutive_hard_fails, status, down_since_ms,
-                down_clock_adjust_ms, last_check_at_ms, snooze_until_ms,
-                paused_at_ms, slept_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                degraded_since_ms, down_clock_adjust_ms, last_check_at_ms,
+                snooze_until_ms, paused_at_ms, slept_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(service_id) DO UPDATE SET
                 consecutive_hard_fails = excluded.consecutive_hard_fails,
                 status = excluded.status,
                 down_since_ms = excluded.down_since_ms,
+                degraded_since_ms = excluded.degraded_since_ms,
                 down_clock_adjust_ms = excluded.down_clock_adjust_ms,
                 last_check_at_ms = excluded.last_check_at_ms,
                 snooze_until_ms = excluded.snooze_until_ms,
@@ -100,6 +114,7 @@ impl History {
                 i64::from(state.consecutive_hard_fails),
                 machine_status_sql(state.status),
                 state.down_since.map(dt_to_ms),
+                state.degraded_since.map(dt_to_ms),
                 i64_from_u64(state.down_clock_adjust_ms, "down_clock_adjust_ms")?,
                 state.last_check_at.map(dt_to_ms),
                 state.snooze_until.map(dt_to_ms),
@@ -371,6 +386,7 @@ fn migrate(conn: &Connection) -> Result<(), StoreError> {
             consecutive_hard_fails INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
             down_since_ms INTEGER,
+            degraded_since_ms INTEGER,
             down_clock_adjust_ms INTEGER NOT NULL DEFAULT 0,
             last_check_at_ms INTEGER,
             snooze_until_ms INTEGER,
@@ -393,6 +409,7 @@ fn migrate(conn: &Connection) -> Result<(), StoreError> {
          );
          CREATE INDEX IF NOT EXISTS idx_samples_at ON check_samples(at_ms);",
     )?;
+    ensure_column(conn, "runtime_state", "degraded_since_ms", "INTEGER")?;
 
     let version: Option<u32> = conn
         .query_row("SELECT version FROM schema_meta LIMIT 1", [], |row| {
@@ -419,11 +436,31 @@ fn migrate(conn: &Connection) -> Result<(), StoreError> {
     }
 }
 
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    decl: &str,
+) -> Result<(), StoreError> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let exists = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .any(|name| name.as_deref() == Ok(column));
+    if !exists {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"),
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 fn pending_runtime() -> RuntimeState {
     RuntimeState {
         consecutive_hard_fails: 0,
         status: MachineStatus::Pending,
         down_since: None,
+        degraded_since: None,
         down_clock_adjust_ms: 0,
         last_check_at: None,
         snooze_until: None,
@@ -604,6 +641,7 @@ mod tests {
             consecutive_hard_fails: 3,
             status: MachineStatus::Down,
             down_since: Some(now),
+            degraded_since: None,
             down_clock_adjust_ms: 0,
             last_check_at: Some(now),
             snooze_until: None,
@@ -659,6 +697,7 @@ mod tests {
             consecutive_hard_fails: 3,
             status: MachineStatus::Down,
             down_since: Some(now),
+            degraded_since: None,
             down_clock_adjust_ms: 1_500,
             last_check_at: Some(now),
             snooze_until: Some(at_ms(1_700_000_900_000)),
@@ -671,6 +710,47 @@ mod tests {
         }
         let history = History::open(&path).unwrap();
         assert_eq!(history.load_runtime("svc-1").unwrap(), state);
+    }
+
+    #[test]
+    fn adds_degraded_since_column_to_existing_runtime_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.sqlite3");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE schema_meta (version INTEGER NOT NULL);
+                 INSERT INTO schema_meta (version) VALUES (1);
+                 CREATE TABLE runtime_state (
+                    service_id TEXT PRIMARY KEY,
+                    consecutive_hard_fails INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL,
+                    down_since_ms INTEGER,
+                    down_clock_adjust_ms INTEGER NOT NULL DEFAULT 0,
+                    last_check_at_ms INTEGER,
+                    snooze_until_ms INTEGER,
+                    paused_at_ms INTEGER,
+                    slept_at_ms INTEGER
+                 );
+                 INSERT INTO runtime_state (
+                    service_id, consecutive_hard_fails, status
+                 ) VALUES ('svc-1', 1, 'degraded');",
+            )
+            .unwrap();
+        }
+        let history = History::open(&path).unwrap();
+        let state = history.load_runtime("svc-1").unwrap();
+        assert_eq!(state.status, MachineStatus::Degraded);
+        assert_eq!(state.degraded_since, None);
+
+        let now = at_ms(1_700_000_000_000);
+        let mut next = state;
+        next.degraded_since = Some(now);
+        history.put_runtime("svc-1", &next).unwrap();
+        assert_eq!(
+            history.load_runtime("svc-1").unwrap().degraded_since,
+            Some(now)
+        );
     }
 
     #[test]

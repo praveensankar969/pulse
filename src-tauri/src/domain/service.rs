@@ -283,6 +283,8 @@ pub struct ServiceView {
     pub last_check_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub down_since: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degraded_since: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub down_clock_adjust_ms: u64,
     pub consecutive_hard_fails: u32,

@@ -38,6 +38,7 @@ export function ServiceRow({
         type="button"
         className={`service-row${selected ? " is-selected" : ""}${paused ? " is-paused" : ""}`}
         data-id={view.id}
+        tabIndex={selected ? 0 : -1}
         aria-current={selected ? "true" : undefined}
         onClick={() => {
           onSelect(view.id);

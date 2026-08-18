@@ -101,6 +101,7 @@ fn apply_success(
     let notify = take_recovery(runtime, now);
     runtime.consecutive_hard_fails = 0;
     runtime.status = MachineStatus::Healthy;
+    runtime.degraded_since = None;
     runtime.last_check_at = Some(now);
     finish(notify, policy)
 }
@@ -109,7 +110,7 @@ fn apply_soft(runtime: &mut RuntimeState, now: DateTime<Utc>, policy: &NotifyPol
     // A slow 2xx is a successful reach — reset the flap counter.
     let notify = take_recovery(runtime, now);
     runtime.consecutive_hard_fails = 0;
-    runtime.status = MachineStatus::Degraded;
+    enter_degraded(runtime, now);
     runtime.last_check_at = Some(now);
     finish(notify, policy)
 }
@@ -127,13 +128,21 @@ fn apply_hard(
         if entered {
             runtime.status = MachineStatus::Down;
             runtime.down_since = Some(now);
+            runtime.degraded_since = None;
         }
         entered.then_some(StateNotify::Down)
     } else {
-        runtime.status = MachineStatus::Degraded;
+        enter_degraded(runtime, now);
         None
     };
     finish(notify, policy)
+}
+
+fn enter_degraded(runtime: &mut RuntimeState, now: DateTime<Utc>) {
+    if runtime.status != MachineStatus::Degraded {
+        runtime.degraded_since = Some(now);
+    }
+    runtime.status = MachineStatus::Degraded;
 }
 
 enum StateNotify {
@@ -252,9 +261,26 @@ mod tests {
         assert_eq!(runtime.status, MachineStatus::Degraded);
         assert_eq!(runtime.consecutive_hard_fails, 0);
         assert_eq!(runtime.down_since, None);
+        assert_eq!(runtime.degraded_since, Some(t0()));
         assert_eq!(runtime.last_check_at, Some(t0()));
         assert_eq!(transition.emit, None);
         assert_eq!(transition.queue, QueueOp::None);
+    }
+
+    #[test]
+    fn degraded_since_stays_until_leave() {
+        let mut runtime = RuntimeState::pending();
+        let policy = NotifyPolicy::default();
+        apply(&mut runtime, soft(), t0(), 3, &policy);
+        assert_eq!(runtime.degraded_since, Some(t0()));
+        apply(&mut runtime, soft(), later(180), 3, &policy);
+        assert_eq!(runtime.degraded_since, Some(t0()));
+        apply(&mut runtime, hard(), later(240), 3, &policy);
+        assert_eq!(runtime.status, MachineStatus::Degraded);
+        assert_eq!(runtime.degraded_since, Some(t0()));
+        apply(&mut runtime, success(), later(300), 3, &policy);
+        assert_eq!(runtime.status, MachineStatus::Healthy);
+        assert_eq!(runtime.degraded_since, None);
     }
 
     #[test]
@@ -521,6 +547,7 @@ mod tests {
         let transition = apply(&mut runtime, success(), now, 3, &NotifyPolicy::default());
         assert_eq!(runtime.status, MachineStatus::Healthy);
         assert_eq!(runtime.down_since, None);
+        assert_eq!(runtime.degraded_since, None);
         assert_eq!(runtime.down_clock_adjust_ms, 0);
         match transition.emit {
             Some(Emit::Recovered { duration_ms }) => {
@@ -631,13 +658,16 @@ mod tests {
         let policy = NotifyPolicy::default();
         let a = apply(&mut runtime, hard(), t0(), 3, &policy);
         assert_eq!(runtime.status, MachineStatus::Degraded);
+        assert_eq!(runtime.degraded_since, Some(t0()));
         assert_eq!(a.emit, None);
         let b = apply(&mut runtime, hard(), later(60), 3, &policy);
         assert_eq!(runtime.status, MachineStatus::Degraded);
+        assert_eq!(runtime.degraded_since, Some(t0()));
         assert_eq!(b.emit, None);
         let c = apply(&mut runtime, hard(), later(120), 3, &policy);
         assert_eq!(runtime.status, MachineStatus::Down);
         assert_eq!(runtime.down_since, Some(later(120)));
+        assert_eq!(runtime.degraded_since, None);
         assert_eq!(c.emit, Some(Emit::Down));
     }
 

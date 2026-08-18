@@ -107,7 +107,12 @@ export async function checkSelected(): Promise<void> {
   markChecking([id]);
   try {
     await ipc.checkNow(id);
+    await refreshServices();
   } catch {
+    // Snapshot refresh is best-effort; always drop the in-flight flag.
+  } finally {
+    // Paused check_now does not advance lastCheckAt, so applyServices cannot
+    // infer completion. Always clear when the invoke settles.
     unmarkChecking([id]);
   }
 }

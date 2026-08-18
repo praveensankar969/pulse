@@ -83,9 +83,20 @@ export function downDurationMs(view: ServiceView, now: number): number | null {
   return Math.max(0, now - since - adjust);
 }
 
+export function degradedDurationMs(view: ServiceView, now: number): number | null {
+  if (view.state !== "degraded") return null;
+  const stamp = view.degradedSince ?? view.lastCheckAt;
+  if (!stamp) return null;
+  const at = Date.parse(stamp);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, now - at);
+}
+
 export function timeInStateMs(view: ServiceView, now: number): number {
   const down = downDurationMs(view, now);
   if (down != null) return down;
+  const degraded = degradedDurationMs(view, now);
+  if (degraded != null) return degraded;
   const stamp = view.lastCheckAt ?? view.createdAt;
   const at = Date.parse(stamp);
   if (Number.isNaN(at)) return 0;
@@ -114,7 +125,7 @@ export function relativeTime(
     return `down ${formatCompactDuration(down)}`;
   }
   if (view.state === "degraded") {
-    const age = timeInStateMs(view, now);
+    const age = degradedDurationMs(view, now) ?? timeInStateMs(view, now);
     return `degraded ${formatCompactDuration(age)}`;
   }
   if (!view.lastCheckAt) return "";

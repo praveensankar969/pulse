@@ -139,7 +139,7 @@
 
 .service-row:hover,
 .service-row.is-selected {
-  background: #222833;
+  background: #1a1f29;
 }
 
 .service-row:focus-visible {
