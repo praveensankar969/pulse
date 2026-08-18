@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -49,6 +49,34 @@ pub fn host_of(url: &str) -> Option<String> {
         .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
 }
 
+/// Offline interval minus pause/sleep overlap and adjust already folded after enter.
+pub fn offline_adjust_ms(
+    entered_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+    paused_at: Option<DateTime<Utc>>,
+    slept_at: Option<DateTime<Utc>>,
+    adjust_now: u64,
+    adjust_at_enter: u64,
+) -> u64 {
+    let mut end = now;
+    if let Some(paused_at) = paused_at {
+        if paused_at < end {
+            end = paused_at;
+        }
+    }
+    if let Some(slept_at) = slept_at {
+        if slept_at < end {
+            end = slept_at;
+        }
+    }
+    let raw = end
+        .signed_duration_since(entered_at)
+        .num_milliseconds()
+        .max(0) as u64;
+    let already = adjust_now.saturating_sub(adjust_at_enter);
+    raw.saturating_sub(already)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OfflineTransition {
     None,
@@ -70,6 +98,7 @@ pub struct OfflineDetector {
     entered_at: Option<DateTime<Utc>>,
     last_success: Option<DateTime<Utc>>,
     failures: Vec<HostFail>,
+    adjust_at_enter: HashMap<String, u64>,
 }
 
 impl OfflineDetector {
@@ -83,6 +112,14 @@ impl OfflineDetector {
 
     pub fn entered_at(&self) -> Option<DateTime<Utc>> {
         self.entered_at
+    }
+
+    pub fn stamp_enter_adjusts(&mut self, snaps: HashMap<String, u64>) {
+        self.adjust_at_enter = snaps;
+    }
+
+    pub fn take_enter_adjusts(&mut self) -> HashMap<String, u64> {
+        std::mem::take(&mut self.adjust_at_enter)
     }
 
     pub fn observe(
@@ -357,6 +394,26 @@ mod tests {
         );
         assert_eq!(change, OfflineTransition::None);
         assert!(!det.is_offline());
+    }
+
+    #[test]
+    fn offline_adjust_excludes_folded_sleep_and_open_pause() {
+        let enter = t0();
+        // Sleep already folded into adjust after enter (apply_wake cleared slept_at).
+        assert_eq!(
+            offline_adjust_ms(enter, later(60), None, None, 20_000, 0),
+            40_000
+        );
+        // Still sleeping: only count entered_at..slept_at.
+        assert_eq!(
+            offline_adjust_ms(enter, later(60), None, Some(later(10)), 0, 0),
+            10_000
+        );
+        // Paused during offline: only count entered_at..paused_at.
+        assert_eq!(
+            offline_adjust_ms(enter, later(60), Some(later(15)), None, 0, 0),
+            15_000
+        );
     }
 
     #[test]

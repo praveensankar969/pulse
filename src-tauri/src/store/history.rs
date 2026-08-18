@@ -136,6 +136,7 @@ impl History {
 
     /// On OS sleep while down: record slept_at. Do not fold the clock yet.
     /// No-op when already paused — the pause interval covers laptop sleep.
+    /// A leftover `slept_at` (missed wake) is folded before the new stamp.
     pub fn apply_sleep(&self, service_id: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
         let Some(mut state) = self.get_runtime(service_id)? else {
             return Ok(());
@@ -143,10 +144,14 @@ impl History {
         if state.paused_at.is_some() {
             return Ok(());
         }
-        if state.status == MachineStatus::Down && state.slept_at.is_none() {
-            state.slept_at = Some(now);
-            self.put_runtime(service_id, &state)?;
+        if state.status != MachineStatus::Down {
+            return Ok(());
         }
+        if let Some(old) = state.slept_at {
+            fold_clock_gap(&mut state, Some(old), now);
+        }
+        state.slept_at = Some(now);
+        self.put_runtime(service_id, &state)?;
         Ok(())
     }
 
@@ -714,6 +719,30 @@ mod tests {
         assert_eq!(after.paused_at, None);
         assert_eq!(after.slept_at, None);
         assert_eq!(after.down_clock_adjust_ms, 120_000);
+    }
+
+    #[test]
+    fn leftover_slept_at_is_folded_before_new_sleep() {
+        let (_dir, history) = open_temp();
+        let down_at = at_ms(1_700_000_000_000);
+        history.put_runtime("svc-1", &down_state(down_at)).unwrap();
+        history
+            .apply_sleep("svc-1", at_ms(1_700_000_010_000))
+            .unwrap();
+        // Missed wake; a later sleep must not leave the old stamp hanging.
+        history
+            .apply_sleep("svc-1", at_ms(1_700_000_040_000))
+            .unwrap();
+        let mid = history.load_runtime("svc-1").unwrap();
+        assert_eq!(mid.slept_at, Some(at_ms(1_700_000_040_000)));
+        assert_eq!(mid.down_clock_adjust_ms, 30_000);
+
+        history
+            .apply_wake("svc-1", at_ms(1_700_000_050_000))
+            .unwrap();
+        let after = history.load_runtime("svc-1").unwrap();
+        assert_eq!(after.slept_at, None);
+        assert_eq!(after.down_clock_adjust_ms, 40_000);
     }
 
     #[test]

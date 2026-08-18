@@ -21,8 +21,8 @@ use crate::notify::{
     QueueOp, QueuedDown, QuietQueue,
 };
 use crate::poller::offline::{
-    host_of, in_wake_grace, is_overdue, is_transport_error, OfflineDetector, OfflineTransition,
-    RESUME_SETTLE,
+    host_of, in_wake_grace, is_overdue, is_transport_error, offline_adjust_ms, OfflineDetector,
+    OfflineTransition, RESUME_SETTLE,
 };
 use crate::poller::state_machine::{fail_threshold, on_result, ProbeEvent};
 use crate::poller::HttpClient;
@@ -449,30 +449,56 @@ impl Inner {
         }
     }
 
-    fn apply_offline_clock(&self, entered_at: DateTime<Utc>, now: DateTime<Utc>) {
+    fn stamp_offline_enter(&self) {
         let ids = self.all_ids();
-        let paused: std::collections::HashSet<String> = self
-            .slots
-            .lock()
-            .expect("slots lock")
-            .values()
-            .filter(|slot| slot.service.paused)
-            .map(|slot| slot.service.id.clone())
-            .collect();
-        let history = self.history.lock().expect("history lock");
-        for id in ids {
-            if paused.contains(&id) {
-                continue;
+        let snaps = {
+            let history = self.history.lock().expect("history lock");
+            let mut snaps = HashMap::new();
+            for id in ids {
+                if let Ok(runtime) = history.load_runtime(&id) {
+                    if runtime.status == MachineStatus::Down {
+                        snaps.insert(id, runtime.down_clock_adjust_ms);
+                    }
+                }
             }
-            let Ok(mut runtime) = history.load_runtime(&id) else {
+            snaps
+        };
+        self.offline
+            .lock()
+            .expect("offline lock")
+            .stamp_enter_adjusts(snaps);
+    }
+
+    fn apply_offline_clock(
+        history: &History,
+        snaps: &HashMap<String, u64>,
+        ids: &[String],
+        entered_at: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) {
+        for id in ids {
+            let Ok(mut runtime) = history.load_runtime(id) else {
                 continue;
             };
-            if runtime.status != MachineStatus::Down || runtime.paused_at.is_some() {
+            if runtime.status != MachineStatus::Down {
                 continue;
             }
-            let elapsed = (now - entered_at).num_milliseconds().max(0) as u64;
-            runtime.down_clock_adjust_ms = runtime.down_clock_adjust_ms.saturating_add(elapsed);
-            let _ = history.put_runtime(&id, &runtime);
+            let at_enter = snaps
+                .get(id)
+                .copied()
+                .unwrap_or(runtime.down_clock_adjust_ms);
+            let add = offline_adjust_ms(
+                entered_at,
+                now,
+                runtime.paused_at,
+                runtime.slept_at,
+                runtime.down_clock_adjust_ms,
+                at_enter,
+            );
+            if add > 0 {
+                runtime.down_clock_adjust_ms = runtime.down_clock_adjust_ms.saturating_add(add);
+                let _ = history.put_runtime(id, &runtime);
+            }
         }
     }
 
@@ -739,6 +765,8 @@ impl Inner {
         self.poller_dead.store(false, Ordering::SeqCst);
         (self.on_poller_dead)(false);
         let panic_gen = self.child_panic_gen.load(Ordering::SeqCst);
+        // Kill-during-sleep / missed DidWake: fold leftover slept_at at boot.
+        self.apply_wakes(Utc::now());
         self.spawn_all();
         self.track_loop({
             let inner = Arc::clone(&self);
@@ -839,7 +867,9 @@ impl Inner {
                 _ = self.cancelled() => return,
             };
             if is_overdue(Utc::now(), next_due, interval) {
-                self.note_wake(Utc::now());
+                let now = Utc::now();
+                self.note_wake(now);
+                self.apply_wakes(now);
                 if elapsed {
                     tokio::select! {
                         _ = sleep(RESUME_SETTLE) => {}
@@ -880,31 +910,20 @@ impl Inner {
         drop(permit);
 
         let settings = self.settings.read().expect("settings lock").clone();
-        let mut runtime = {
-            let history = self.history.lock().expect("history lock");
-            history
-                .load_runtime(&service.id)
-                .unwrap_or_else(|_| RuntimeState::pending())
-        };
-        let policy = NotifyPolicy {
-            notifications: settings.notifications,
-            service_notify: service.notify,
-            always_alert: service.always_alert,
-            in_quiet_hours: settings
-                .quiet_hours
-                .as_ref()
-                .is_some_and(|hours| in_quiet_hours(hours, now)),
-            snoozed: runtime.is_snoozed(now),
-            keychain_identity_changed: identity,
-        };
         let threshold = fail_threshold(service.fail_threshold, settings.fail_threshold);
         let paused = self
             .clone_service(&service.id)
             .map(|current| current.paused)
             .unwrap_or(service.paused);
         let reached = matches!(evidence.outcome, OutcomeClass::Ok | OutcomeClass::Soft);
+        let grace_transport = self.in_wake_grace(now)
+            && !reached
+            && evidence.error_kind.is_some_and(is_transport_error);
         let unpaused = self.unpaused_ids().len();
-        let offline_change = {
+        // Grace-window NIC errors are not honest; do not feed the offline detector.
+        let offline_change = if grace_transport {
+            OfflineTransition::None
+        } else {
             let mut detector = self.offline.lock().expect("offline lock");
             detector.observe(
                 host_of(&service.url).as_deref(),
@@ -916,20 +935,17 @@ impl Inner {
         };
         match offline_change {
             OfflineTransition::Entered => {
+                self.stamp_offline_enter();
                 tracing::info!(event = "offline", offline = true, "offline");
                 self.events.emit_offline(true);
             }
-            OfflineTransition::Exited { entered_at } => {
-                self.apply_offline_clock(entered_at, now);
+            OfflineTransition::Exited { .. } => {
                 tracing::info!(event = "offline", offline = false, "offline");
                 self.events.emit_offline(false);
             }
             OfflineTransition::None => {}
         }
         let offline = self.offline.lock().expect("offline lock").is_offline();
-        let grace_transport = self.in_wake_grace(now)
-            && !reached
-            && evidence.error_kind.is_some_and(is_transport_error);
         let event = if offline {
             ProbeEvent::Offline
         } else if grace_transport {
@@ -937,32 +953,58 @@ impl Inner {
         } else {
             ProbeEvent::Applied(outcome_of(&evidence))
         };
-        let transition = on_result(
-            &mut runtime,
-            event,
-            now,
-            threshold,
-            paused,
-            offline,
-            &policy,
-        );
 
-        let state = runtime
-            .status
-            .as_service_status()
-            .unwrap_or(ServiceStatus::Healthy);
-        let result = CheckResult {
-            evidence: evidence.clone(),
-            state,
-        };
-
-        if transition.applied && !offline {
-            let sample = compact_sample(&result);
+        // Fold + load + on_result + persist under one lock so peers cannot
+        // overwrite the offline adjust with a stale pre-fold snapshot.
+        let (transition, result) = {
             let history = self.history.lock().expect("history lock");
-            history.put_runtime(&service.id, &runtime)?;
-            history.put_last_result(&service.id, &result)?;
-            history.insert_sample(&service.id, &sample)?;
-        }
+            if let OfflineTransition::Exited { entered_at } = offline_change {
+                let snaps = self
+                    .offline
+                    .lock()
+                    .expect("offline lock")
+                    .take_enter_adjusts();
+                Self::apply_offline_clock(&history, &snaps, &self.all_ids(), entered_at, now);
+            }
+            let mut runtime = history
+                .load_runtime(&service.id)
+                .unwrap_or_else(|_| RuntimeState::pending());
+            let policy = NotifyPolicy {
+                notifications: settings.notifications,
+                service_notify: service.notify,
+                always_alert: service.always_alert,
+                in_quiet_hours: settings
+                    .quiet_hours
+                    .as_ref()
+                    .is_some_and(|hours| in_quiet_hours(hours, now)),
+                snoozed: runtime.is_snoozed(now),
+                keychain_identity_changed: identity,
+            };
+            let transition = on_result(
+                &mut runtime,
+                event,
+                now,
+                threshold,
+                paused,
+                offline,
+                &policy,
+            );
+            let state = runtime
+                .status
+                .as_service_status()
+                .unwrap_or(ServiceStatus::Healthy);
+            let result = CheckResult {
+                evidence: evidence.clone(),
+                state,
+            };
+            if transition.applied && !offline {
+                let sample = compact_sample(&result);
+                history.put_runtime(&service.id, &runtime)?;
+                history.put_last_result(&service.id, &result)?;
+                history.insert_sample(&service.id, &sample)?;
+            }
+            (transition, result)
+        };
 
         if let Some(emit) = transition.emit {
             self.emit_notification(service, &evidence, emit, now);
@@ -1161,7 +1203,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{ExpectedStatus, HeaderSpec, HttpMethod, UiState};
+    use crate::domain::{ExpectedStatus, HeaderSpec, HttpMethod, MachineStatus, UiState};
     use crate::notify::{NoopNotifier, Notification, Notifier};
     use crate::store::{History, SecretStore};
     use std::sync::atomic::AtomicU32;
@@ -1928,6 +1970,98 @@ mod tests {
             assert_eq!(history.load_runtime("g").unwrap().consecutive_hard_fails, 0);
             assert!(history.samples_24h("g", Utc::now()).unwrap().is_empty());
         });
+        handle.shutdown();
+    }
+
+    #[tokio::test]
+    async fn startup_folds_leftover_slept_at() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500).set_delay(Duration::from_secs(8)))
+            .mount(&server)
+            .await;
+
+        let (_dir, history) = open_history();
+        let sleep_at = Utc::now() - chrono::Duration::minutes(5);
+        let mut state = RuntimeState::pending();
+        state.status = MachineStatus::Down;
+        state.consecutive_hard_fails = 3;
+        state.down_since = Some(sleep_at - chrono::Duration::minutes(5));
+        state.slept_at = Some(sleep_at);
+        history.put_runtime("a", &state).unwrap();
+
+        let svc = sample("a", format!("{}/health", server.uri()), 60);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = start(
+            vec![svc],
+            history,
+            Arc::new(SecretStore::for_test()),
+            Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+        );
+
+        let folded = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if handle.with_history(|history| {
+                    history
+                        .load_runtime("a")
+                        .ok()
+                        .is_some_and(|runtime| runtime.slept_at.is_none())
+                }) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(folded.is_ok(), "startup must fold leftover slept_at");
+        handle.with_history(|history| {
+            let runtime = history.load_runtime("a").unwrap();
+            assert!(runtime.down_clock_adjust_ms >= 4 * 60 * 1000);
+        });
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn grace_transport_does_not_enter_offline() {
+        let (_dir, history) = open_history();
+        let a = sample("aaa", "http://aaa.invalid/health".into(), 60);
+        let b = sample("bbb", "http://bbb.invalid/health".into(), 60);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let scheduler = Scheduler::new(SchedulerConfig {
+            services: vec![a, b],
+            settings: AppSettings::default(),
+            history,
+            secrets: Arc::new(SecretStore::for_test()),
+            events: Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+            notifier: Box::new(NoopNotifier),
+            enable_jitter: false,
+            on_poller_dead: Arc::new(|_| {}),
+        })
+        .unwrap();
+        let handle = scheduler.handle();
+        let resume = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.resume_from_wake().await })
+        };
+        tokio::time::sleep(Duration::from_millis(2_200)).await;
+        resume.await.unwrap();
+
+        let _ = handle.check_now("aaa").await;
+        let _ = handle.check_now("bbb").await;
+        assert!(
+            !handle.is_offline(),
+            "grace-window transport fails must not enter offline"
+        );
         handle.shutdown();
     }
 }

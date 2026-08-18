@@ -100,11 +100,14 @@ mod windows {
 
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::System::Power::{
+        RegisterSuspendResumeNotification, DEVICE_NOTIFY_WINDOW_HANDLE,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongPtrW,
         RegisterClassW, SetWindowLongPtrW, TranslateMessage, CREATESTRUCTW, CW_USEDEFAULT,
-        GWLP_USERDATA, HWND_MESSAGE, MSG, WM_CREATE, WM_DESTROY, WM_NCCREATE, WM_POWERBROADCAST,
-        WNDCLASSW, WS_OVERLAPPED,
+        GWLP_USERDATA, MSG, WM_CREATE, WM_DESTROY, WM_NCCREATE, WM_POWERBROADCAST, WNDCLASSW,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
     };
 
     const PBT_APMSUSPEND: usize = 0x0004;
@@ -141,16 +144,17 @@ mod windows {
             lpszClassName: class_name.as_ptr(),
         };
         RegisterClassW(&class);
+        // Top-level hidden popup: message-only windows do not get WM_POWERBROADCAST.
         let hwnd = CreateWindowExW(
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            class_name.as_ptr(),
+            class_name.as_ptr(),
+            WS_POPUP,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
             0,
-            class_name.as_ptr(),
-            class_name.as_ptr(),
-            WS_OVERLAPPED,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            HWND_MESSAGE,
+            0,
+            std::ptr::null_mut(),
             std::ptr::null_mut(),
             GetModuleHandleW(std::ptr::null()),
             Box::into_raw(state).cast(),
@@ -158,6 +162,7 @@ mod windows {
         if hwnd.is_null() {
             return;
         }
+        let _ = RegisterSuspendResumeNotification(hwnd, DEVICE_NOTIFY_WINDOW_HANDLE);
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
             TranslateMessage(&msg);
