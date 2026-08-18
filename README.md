@@ -88,6 +88,8 @@ Settings → “Check for updates” is not built yet (no Settings window).
 App icons are a simple filled circle (not emoji). Tray status marks (green / amber / red / hollow / slash) are a later change and are not these bundle icons.
 ## Notifications
 
-OS toasts fire once on down and once on recovery. Sound is best-effort (`settings.sound`). Permission is requested on the first successful save of a service with `notify: true`, not at launch.
+OS toasts fire once on down and once on recovery. Sound is best-effort (`settings.sound`). Permission is requested on the first successful save of a service with `notify: true`, not at launch. Toasts are Rust-only (`OsNotifier`); webviews do not get `notification:default`.
 
-**Windows click cannot be QA’d in `tauri dev`.** The plugin shows a PowerShell name/icon in development, and toast click is not a product-quality test. Click-to-open-popover (AUMID / `pulse:focus?id=`) is only claimed on an installed NSIS build. Do not cite plugin “actions” — that API is mobile-only.
+Click is best-effort show popover (never detail). The plugin’s desktop `show()` has no click payload (“actions” are mobile-only), so we deliver through notify-rust and `wait_for_action`. `RunEvent::Reopen` is only a Dock-relaunch fallback — this is an accessory / `LSUIElement` app with no Dock icon, so a banner click does not go through Reopen.
+
+**Windows click cannot be QA’d in `tauri dev`.** Dev toasts show a PowerShell name/icon; click is not a product-quality test. AUMID / `pulse:focus?id=` is only claimed on an installed NSIS build.

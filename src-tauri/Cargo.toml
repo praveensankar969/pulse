@@ -52,6 +52,8 @@ tauri-plugin-log = "2"
 log = "0.4"
 open = "5"
 tauri-plugin-notification = "2"
+# Plugin show() drops the handle. Same backend, so we can wait_for_action.
+notify-rust = "4"
 
 [dev-dependencies]
 tempfile = "3"

@@ -16,4 +16,5 @@
     "allow-should-suppress-blur",
     "notification:default"
   ]
+  "permissions": ["core:default", "allow-scheduler", "allow-should-suppress-blur"]
 }

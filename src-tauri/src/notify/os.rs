@@ -1,8 +1,11 @@
-//! OS toasts via `tauri-plugin-notification`.
+//! OS toasts via `tauri-plugin-notification` / notify-rust.
 //!
-//! Click is best-effort: show the popover (macOS re-assert accessory; Windows
-//! honors `pulse:focus?id=` / AUMID when the plugin set one). Plugin "actions"
-//! are mobile-only. No quiet-hours flush.
+//! Plugin `NotificationBuilder::show` is fire-and-forget (no desktop click
+//! payload; "actions" are mobile-only). We send through notify-rust — the same
+//! backend the plugin uses — and `wait_for_action` shows the popover.
+//! `RunEvent::Reopen` is only a Dock-relaunch fallback; this app is an
+//! accessory / LSUIElement and has no Dock icon, so banner click does not go
+//! through Reopen. No quiet-hours flush.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -110,6 +113,14 @@ pub fn parse_focus_arg(arg: &str) -> Option<Option<String>> {
     Some(None)
 }
 
+/// Banner / toast click vs dismiss. notify-rust has no service-id payload.
+pub fn is_click_action(action: &str) -> bool {
+    !matches!(
+        action,
+        "__closed__" | "closed" | "dismissed" | "__dismissed__"
+    )
+}
+
 /// Best-effort: show popover, emit `pulse://focus-service`. Do not open detail.
 pub fn handle_toast_click<R: Runtime>(app: &AppHandle<R>, id: Option<String>) {
     #[cfg(target_os = "macos")]
@@ -188,14 +199,87 @@ impl<R: Runtime> Notifier for OsNotifier<R> {
         };
         tracing::info!(event = "notify", kind, "os toast");
 
-        let mut builder = self.app.notification().builder().title(title).body(body);
-        if self.sound_enabled() {
-            builder = builder.sound(DEFAULT_SOUND);
-        }
-        if let Err(error) = builder.show() {
-            tracing::warn!(error = %error, "os toast failed");
-        }
+        let identifier = self.app.config().identifier.clone();
+        let sound = self.sound_enabled();
+        let app = self.app.clone();
+        let hub = self.hub.clone();
+        // Plugin show() drops the handle. One notify-rust toast + wait_for_action.
+        tauri::async_runtime::spawn_blocking(move || {
+            deliver_toast(&identifier, &title, &body, sound, &app, &hub);
+        });
     }
+}
+
+/// Same notify-rust path as the plugin's desktop `show`, plus a click wait.
+fn deliver_toast<R: Runtime>(
+    identifier: &str,
+    title: &str,
+    body: &str,
+    sound: bool,
+    app: &AppHandle<R>,
+    hub: &NotifyHub,
+) {
+    let notification = build_native(identifier, title, body, sound);
+    match notification.show() {
+        Ok(handle) => {
+            handle.wait_for_action(|action| {
+                if is_click_action(action) {
+                    handle_toast_click(app, hub.last_id());
+                }
+            });
+        }
+        Err(error) => tracing::warn!(error = %error, "os toast failed"),
+    }
+}
+
+fn build_native(
+    identifier: &str,
+    title: &str,
+    body: &str,
+    sound: bool,
+) -> notify_rust::Notification {
+    prepare_native_app(identifier);
+    let mut notification = notify_rust::Notification::new();
+    notification.summary(title);
+    notification.body(body);
+    notification.auto_icon();
+    if sound {
+        notification.sound_name(DEFAULT_SOUND);
+    }
+    #[cfg(windows)]
+    apply_aumid(&mut notification, identifier);
+    notification
+}
+
+fn prepare_native_app(identifier: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = notify_rust::set_application(if tauri::is_dev() {
+            "com.apple.Terminal"
+        } else {
+            identifier
+        });
+    }
+    let _ = identifier;
+}
+
+/// Installed app only — same guard as tauri-plugin-notification.
+#[cfg(windows)]
+fn apply_aumid(notification: &mut notify_rust::Notification, identifier: &str) {
+    use std::path::MAIN_SEPARATOR as SEP;
+    let Ok(exe) = tauri::utils::platform::current_exe() else {
+        return;
+    };
+    let Some(dir) = exe.parent() else {
+        return;
+    };
+    let curr = dir.display().to_string();
+    if curr.ends_with(format!("{SEP}target{SEP}debug").as_str())
+        || curr.ends_with(format!("{SEP}target{SEP}release").as_str())
+    {
+        return;
+    }
+    notification.app_id(identifier);
 }
 
 #[cfg(test)]
@@ -244,5 +328,13 @@ mod tests {
         assert!(!asked.load(Ordering::SeqCst));
         assert!(should_request_permission(true, &asked));
         assert!(!should_request_permission(true, &asked));
+    }
+
+    #[test]
+    fn closed_is_not_a_click() {
+        assert!(is_click_action("default"));
+        assert!(is_click_action("__default__"));
+        assert!(!is_click_action("__closed__"));
+        assert!(!is_click_action("closed"));
     }
 }

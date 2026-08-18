@@ -13,4 +13,5 @@
     "allow-save-service",
     "notification:default"
   ]
+  "permissions": ["core:default", "allow-reveal", "allow-save-service"]
 }
