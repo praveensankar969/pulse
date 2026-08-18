@@ -3,5 +3,10 @@
   "identifier": "popover",
   "description": "Glance list. No secret-reveal commands.",
   "windows": ["popover"],
-  "permissions": ["core:default", "allow-scheduler", "allow-should-suppress-blur"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "allow-scheduler",
+    "allow-should-suppress-blur"
+  ]
 }

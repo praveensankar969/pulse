@@ -62,6 +62,7 @@ pub fn assemble_view(
         last_result: last_result.cloned(),
         last_check_at: runtime.last_check_at,
         down_since: runtime.down_since,
+        down_clock_adjust_ms: runtime.down_clock_adjust_ms,
         consecutive_hard_fails: runtime.consecutive_hard_fails,
         sparkline24: sparkline24(samples),
     }
@@ -133,6 +134,15 @@ mod tests {
             .sparkline24
             .iter()
             .all(|point| *point == SparklinePoint::Gap));
+    }
+
+    #[test]
+    fn down_clock_adjust_is_copied() {
+        let mut runtime = RuntimeState::pending();
+        runtime.status = MachineStatus::Down;
+        runtime.down_clock_adjust_ms = 90_000;
+        let view = assemble_view(&service(false), &runtime, None, &[], false);
+        assert_eq!(view.down_clock_adjust_ms, 90_000);
     }
 
     #[test]

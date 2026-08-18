@@ -94,6 +94,9 @@ pub fn run() {
             ipc::commands::check_now,
             ipc::commands::check_all,
             ipc::commands::delete_service,
+            ipc::commands::poller_dead,
+            ipc::commands::quit,
+            ipc::commands::open_action,
             platform::tray::should_suppress_blur,
         ])
         .run(tauri::generate_context!())

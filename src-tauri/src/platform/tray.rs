@@ -766,6 +766,7 @@ mod tests {
             last_result: None,
             last_check_at: None,
             down_since: None,
+            down_clock_adjust_ms: 0,
             consecutive_hard_fails: 0,
             sparkline24: vec![],
         }

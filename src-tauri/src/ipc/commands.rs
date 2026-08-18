@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use tauri::{State, WebviewWindow};
+use tauri::{AppHandle, State, WebviewWindow};
 
 use crate::domain::{CheckResult, ServiceView};
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
@@ -142,6 +142,54 @@ pub fn delete_service(state: State<'_, AppState>, id: String) -> Result<(), Sche
     Ok(())
 }
 
+#[tauri::command(rename_all = "camelCase")]
+pub fn poller_dead(state: State<'_, AppState>) -> bool {
+    state.scheduler.poller_dead()
+}
+
+#[tauri::command]
+pub fn quit(app: AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn open_action(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let view = state.scheduler.view(&id).map_err(|error| error.to_string())?;
+    let url = view
+        .service
+        .action_url
+        .as_deref()
+        .unwrap_or(view.service.url.as_str());
+    open_http_url(url)
+}
+
+fn open_http_url(url: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url).map_err(|error| error.to_string())?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("unsupported url scheme".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(parsed.as_str())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", parsed.as_str()])
+            .spawn()
+            .map_err(|error| error.to_string())?;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = parsed;
+        return Err("unsupported platform".into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::secret_header_exists;
@@ -192,5 +240,11 @@ mod tests {
             secret_header_exists(&store, "missing", "Authorization"),
             Err(RevealError::NotFound)
         ));
+    }
+
+    #[test]
+    fn open_http_url_rejects_non_http() {
+        assert!(super::open_http_url("file:///etc/passwd").is_err());
+        assert!(super::open_http_url("not a url").is_err());
     }
 }

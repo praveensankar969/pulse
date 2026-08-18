@@ -121,6 +121,8 @@ export interface ServiceView extends Service {
   lastResult?: CheckResult;
   lastCheckAt?: string;
   downSince?: string;
+  /** Subtracted from now - downSince for displayed down duration. */
+  downClockAdjustMs?: number;
   consecutiveHardFails: number;
   /** Post-machine states; "gap" = canceled / offline-frozen / not-yet-checked. */
   sparkline24: Array<ServiceStatus | "gap">;

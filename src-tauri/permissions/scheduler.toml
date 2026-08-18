@@ -23,6 +23,21 @@ identifier = "allow-delete-service"
 description = "Delete keychain items, history, config row, and abort the poller task."
 commands.allow = ["delete_service"]
 
+[[permission]]
+identifier = "allow-poller-dead"
+description = "Read whether the poller watchdog is in poller_dead."
+commands.allow = ["poller_dead"]
+
+[[permission]]
+identifier = "allow-quit"
+description = "Quit the app from the popover footer."
+commands.allow = ["quit"]
+
+[[permission]]
+identifier = "allow-open-action"
+description = "Open the selected service action URL or health URL."
+commands.allow = ["open_action"]
+
 [[set]]
 identifier = "allow-scheduler"
 description = "Scheduler controls used by the popover and detail windows."
@@ -32,4 +47,7 @@ permissions = [
     "allow-check-now",
     "allow-check-all",
     "allow-delete-service",
+    "allow-poller-dead",
+    "allow-quit",
+    "allow-open-action",
 ]
