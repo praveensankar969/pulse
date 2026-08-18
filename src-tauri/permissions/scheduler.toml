@@ -79,6 +79,14 @@ commands.allow = ["open_settings"]
 identifier = "allow-settings"
 description = "Settings window: load and save preferences including quiet hours."
 permissions = ["allow-get-settings", "allow-update-settings"]
+identifier = "allow-poller-dead"
+description = "Read whether the poller watchdog is in poller_dead."
+commands.allow = ["poller_dead"]
+
+[[permission]]
+identifier = "allow-quit"
+description = "Quit the app from the popover footer."
+commands.allow = ["quit"]
 
 [[set]]
 identifier = "allow-scheduler"

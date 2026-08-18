@@ -372,10 +372,6 @@ fn handle_menu<R: tauri::Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
     }
 }
 
-fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
-    crate::platform::autostart::open_settings(app);
-}
-
 fn handle_tray_event<R: tauri::Runtime>(
     app: &AppHandle<R>,
     tray: &TrayHandle,

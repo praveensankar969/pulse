@@ -4,7 +4,7 @@ use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const SETTINGS_LABEL: &str = "settings";
 pub const SETTINGS_WIDTH: f64 = 440.0;
-pub const SETTINGS_HEIGHT: f64 = 420.0;
+pub const SETTINGS_HEIGHT: f64 = 560.0;
 
 pub fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
@@ -21,7 +21,7 @@ pub fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
     )
     .title("Settings")
     .inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    .min_inner_size(360.0, 320.0)
+    .min_inner_size(400.0, 480.0)
     .resizable(true)
     .maximizable(false)
     .skip_taskbar(false)
@@ -47,6 +47,6 @@ mod tests {
     #[test]
     fn settings_window_size() {
         assert_eq!(SETTINGS_WIDTH, 440.0);
-        assert_eq!(SETTINGS_HEIGHT, 420.0);
+        assert_eq!(SETTINGS_HEIGHT, 560.0);
     }
 }

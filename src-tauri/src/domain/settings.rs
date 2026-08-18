@@ -11,9 +11,6 @@ pub const DEFAULT_HOTKEY: &str = "CommandOrControl+Shift+U";
 /// Settings help, verbatim. A still-up homelab host keeps Pulse online.
 pub const MIXED_REACHABILITY_HELP: &str = "If any check succeeds, Pulse assumes the network is up. A homelab box that still answers will keep Pulse online even if the public internet is gone.";
 
-/// Settings help, verbatim. A still-up homelab host keeps Pulse online.
-pub const MIXED_REACHABILITY_HELP: &str = "If any check succeeds, Pulse assumes the network is up. A homelab box that still answers will keep Pulse online even if the public internet is gone.";
-
 use super::{MAX_INTERVAL_SEC, MIN_INTERVAL_SEC};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

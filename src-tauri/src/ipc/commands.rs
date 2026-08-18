@@ -16,10 +16,11 @@ use crate::notify::request_permission_on_notify_save;
 use crate::domain::{AppSettings, CheckResult, ServiceView};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 
-use crate::domain::{AppSettings, CheckResult, CompactSample, ServiceDraft, ServiceView};
+use crate::domain::{AppSettings, CheckEvidence, CheckResult, CompactSample, ServiceDraft, ServiceView};
 use crate::notify::{request_permission_on_notify_save, NotifyHub};
+use crate::ipc::draft::run_test_draft;
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
@@ -142,38 +143,20 @@ pub fn save_service(
     draft: ServiceDraft,
 ) -> Result<ServiceView, SchedulerError> {
     let notify = draft.notify;
+    let is_create = draft.id.is_none();
     let service = state
         .store
         .lock()
         .expect("config store lock")
         .save_service(&state.secrets, draft)?;
-    state.scheduler.upsert(service.clone());
+    let id = service.id.clone();
+    state.scheduler.upsert(service);
     if notify {
         request_permission_on_notify_save(&app);
     }
-    state.scheduler.view(&service.id)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, SchedulerError> {
-    Ok(state
-        .store
-        .lock()
-        .expect("config store lock")
-        .load_settings()?)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn save_service(
-    state: State<'_, AppState>,
-    draft: ServiceDraft,
-) -> Result<ServiceView, SchedulerError> {
-    let service = {
-        let store = state.store.lock().expect("config store lock");
-        store.save_service(&state.secrets, draft)?
-    };
-    let id = service.id.clone();
-    state.scheduler.upsert(service);
+    if is_create {
+        crate::platform::autostart::notify_service_created();
+    }
     state.scheduler.view(&id)
 }
 
@@ -252,20 +235,27 @@ pub fn update_settings(
     app: AppHandle,
     state: State<'_, AppState>,
     settings: AppSettings,
-) -> Result<AppSettings, SchedulerError> {
+) -> Result<AppSettings, String> {
+    crate::platform::autostart::validate_hotkey(&settings)?;
+    // Register before disk write so a failed bind keeps the last-good shortcut.
+    crate::platform::autostart::apply_hotkey(&app, &settings)?;
+    let mut settings = settings;
+    if settings.launch_at_login {
+        settings.asked_launch_at_login = true;
+    }
     state
         .store
         .lock()
         .expect("config store lock")
-        .save_settings(&settings)?;
-    state.scheduler.update_settings(settings.clone());
+        .save_settings(&settings)
+        .map_err(|error| error.to_string())?;
     if let Some(hub) = app.try_state::<NotifyHub>() {
         hub.set_sound(settings.sound);
     }
     if settings.notifications {
         request_permission_on_notify_save(&app);
     }
-    let _ = app.emit("pulse://settings", &settings);
+    crate::platform::autostart::persist_side_effects(&app, &settings)?;
     Ok(settings)
 }
 
@@ -292,7 +282,7 @@ pub fn open_action(state: State<'_, AppState>, id: String) -> Result<(), Schedul
         .action_url
         .as_deref()
         .unwrap_or(view.service.url.as_str());
-    open::that(url).map_err(|_| SchedulerError::Open)
+    open_http_url(url).map_err(|_| SchedulerError::Open)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -329,58 +319,6 @@ pub fn poller_dead(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 pub fn quit(app: AppHandle) {
     app.exit(0);
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn open_action(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let view = state
-        .scheduler
-        .view(&id)
-        .map_err(|error| error.to_string())?;
-    let url = view
-        .service
-        .action_url
-        .as_deref()
-        .unwrap_or(view.service.url.as_str());
-    open_http_url(url)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
-    state
-        .store
-        .lock()
-        .expect("config store lock")
-        .load_settings()
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn update_settings(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    settings: AppSettings,
-) -> Result<AppSettings, String> {
-    crate::platform::autostart::validate_hotkey(&settings)?;
-    // Register before disk write so a failed bind keeps the last-good shortcut.
-    crate::platform::autostart::apply_hotkey(&app, &settings)?;
-    let mut settings = settings;
-    if settings.launch_at_login {
-        settings.asked_launch_at_login = true;
-    }
-    state
-        .store
-        .lock()
-        .expect("config store lock")
-        .save_settings(&settings)
-        .map_err(|error| error.to_string())?;
-    crate::platform::autostart::persist_side_effects(&app, &settings)?;
-    Ok(settings)
-}
-
-#[tauri::command]
-pub fn open_settings(app: AppHandle) {
-    crate::platform::autostart::open_settings(&app);
 }
 
 /// First-save hook (editor / settings). Opens Settings if the prompt is still pending.

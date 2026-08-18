@@ -15,5 +15,9 @@
   ]
   "permissions": ["core:default", "allow-reveal", "allow-save-service"]
     "allow-maybe-ask-launch-at-login"
+    "allow-maybe-ask-launch-at-login",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-set-title"
   ]
 }

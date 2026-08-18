@@ -8,6 +8,7 @@ import type {
   QuietHours,
   ServiceStatus,
   ServiceView,
+  UiState,
 } from "./types";
 
 export type PrimaryLabel =
@@ -112,6 +113,13 @@ export function formatCompactDuration(ms: number): string {
   if (n < 60_000) return `${Math.floor(n / 1000)}s`;
   if (n < 3_600_000) return `${Math.round(n / 60_000)}m`;
   return `${Math.round(n / 3_600_000)}h`;
+}
+
+export function formatRelative(iso: string | undefined, now: number): string {
+  if (!iso) return "";
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return "";
+  return `${formatCompactDuration(Math.max(0, now - at))} ago`;
 }
 
 export function downDurationMs(view: ServiceView, now: number): number | null {
@@ -378,4 +386,54 @@ export function bucket24h(
 export function padSparkline(points: SparkPoint[]): SparkPoint[] {
   if (points.length >= 24) return points.slice(-24);
   return [...Array<SparkPoint>(24 - points.length).fill("gap"), ...points];
+}
+
+export function summary(views: ServiceView[]): {
+  countText: string;
+  stripText: string;
+  stripTone: StripTone;
+} {
+  if (views.length === 0) {
+    return {
+      countText: "No services",
+      stripText: "Add a check to start watching.",
+      stripTone: "neutral",
+    };
+  }
+
+  const noun = views.length === 1 ? "service" : "services";
+  const active = views.filter((view) => !view.paused && view.state !== "paused");
+  const downs = active.filter((view) => view.state === "down");
+  const degraded = active.filter((view) => view.state === "degraded");
+
+  const countText = downs.length
+    ? `${views.length} ${noun} · ${downs.length} down`
+    : `${views.length} ${noun}`;
+
+  if (downs.length) {
+    return {
+      countText,
+      stripText: `${downs.length} down · ${downs.map((view) => view.name).join(", ")}`,
+      stripTone: "down",
+    };
+  }
+
+  if (degraded.length) {
+    const slow = degraded.filter(isSlow);
+    const kind = slow.length === degraded.length ? "slow" : "degraded";
+    const named = kind === "slow" ? slow : degraded;
+    return {
+      countText,
+      stripText: `${named.length} ${kind} · ${named.map((view) => view.name).join(", ")}`,
+      stripTone: "warn",
+    };
+  }
+
+  if (active.length === 0) {
+    return { countText, stripText: "All paused", stripTone: "neutral" };
+  }
+  if (active.every((view) => view.state === "pending")) {
+    return { countText, stripText: "Checking…", stripTone: "neutral" };
+  }
+  return { countText, stripText: "All healthy", stripTone: "ok" };
 }

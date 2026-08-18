@@ -3,14 +3,14 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 
 use crate::domain::{
     apply_launch_prompt, launch_prompt_action, resolved_hotkey, AppSettings, LaunchPromptAction,
 };
 
-pub const SETTINGS_WIDTH: f64 = 440.0;
-pub const SETTINGS_HEIGHT: f64 = 560.0;
+pub const SETTINGS_WIDTH: f64 = crate::platform::settings::SETTINGS_WIDTH;
+pub const SETTINGS_HEIGHT: f64 = crate::platform::settings::SETTINGS_HEIGHT;
 
 static PENDING_LAUNCH_PROMPT: AtomicBool = AtomicBool::new(false);
 static LAST_HOTKEY: Mutex<Option<String>> = Mutex::new(None);
@@ -195,26 +195,7 @@ pub fn answer_launch_prompt<R: tauri::Runtime>(
 }
 
 pub fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        return;
-    }
-
-    let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
-        .title("Settings")
-        .inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
-        .min_inner_size(400.0, 480.0)
-        .resizable(true)
-        .maximizable(false)
-        .skip_taskbar(false)
-        .visible(true)
-        .focused(true)
-        .accept_first_mouse(true);
-
-    if let Err(error) = builder.build() {
-        tracing::warn!(%error, "settings window create failed");
-    }
+    crate::platform::settings::open_settings(app);
 }
 
 pub fn install<R: tauri::Runtime>(app: &AppHandle<R>, settings: &AppSettings) {

@@ -1194,25 +1194,6 @@ fn fnv(id: &str) -> u64 {
     hash
 }
 
-fn missing_secret_evidence(missing: &MissingSecret, at: DateTime<Utc>) -> CheckEvidence {
-    CheckEvidence {
-        at,
-        outcome: OutcomeClass::Hard,
-        http_status: None,
-        latency_ms: None,
-        redirects: None,
-        headers_stripped_on_redirect: None,
-        assertion_results: Vec::new(),
-        assertion_skipped: None,
-        error_kind: Some(ErrorKind::MissingSecret),
-        error: Some(ErrorKind::MissingSecret.user_message(&MessageArgs {
-            secret_key: Some(&missing.key),
-            ..MessageArgs::default()
-        })),
-        body_preview: None,
-    }
-}
-
 fn log_offline(service: &Service, next_sec: u32) {
     tracing::info!(
         id = %service.id,

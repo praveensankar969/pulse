@@ -20,10 +20,16 @@ import type {
   AppSettings,
   CheckResult,
   DetailPayload,
+  DetailPayload,
+  ServiceDraft,
   ServiceView,
 } from "./types";
 
 export type BeginReveal = { token: string; ttlMs: number };
+export type FocusServicePayload = { id?: string };
+export type PollerDeadPayload = { at: string };
+export type OfflinePayload = { offline: boolean };
+export type ImportResult = { added: number; updated: number };
 
 export async function listServices(): Promise<ServiceView[]> {
   return invoke<ServiceView[]>("list_services");
@@ -41,14 +47,6 @@ export async function updateSettings(
   settings: AppSettings,
 ): Promise<AppSettings> {
   return invoke<AppSettings>("update_settings", { settings });
-}
-
-export async function openSettings(): Promise<void> {
-  try {
-    await invoke("open_settings");
-  } catch {
-    await emit("pulse://open-settings");
-  }
 }
 
 export async function checkNow(id: string): Promise<CheckResult> {
@@ -94,15 +92,58 @@ export async function hidePopover(): Promise<void> {
 }
 
 export async function openSettings(): Promise<void> {
-  await invoke("open_settings");
+  try {
+    await invoke("open_settings");
+  } catch {
+    await emit("pulse://open-settings");
+  }
 }
 
-export async function getSettings(): Promise<AppSettings> {
-  return invoke<AppSettings>("get_settings");
+export async function openEditor(id?: string): Promise<void> {
+  try {
+    await invoke("open_editor", { id: id ?? null });
+  } catch {
+    await emit("pulse://open-editor", id ? { id } : {});
+  }
 }
 
-export async function updateSettings(settings: AppSettings): Promise<AppSettings> {
-  return invoke<AppSettings>("update_settings", { settings });
+export async function closeEditor(): Promise<void> {
+  await invoke("close_editor");
+}
+
+export async function openDetail(id: string): Promise<void> {
+  try {
+    await invoke("open_detail", { id });
+  } catch {
+    await emit("pulse://open-detail", { id });
+  }
+}
+
+export async function beginReveal(
+  id: string,
+  headerKey: string,
+): Promise<BeginReveal> {
+  return invoke<BeginReveal>("begin_reveal", { id, headerKey });
+}
+
+export async function revealSecret(
+  id: string,
+  headerKey: string,
+  token: string,
+): Promise<string> {
+  return invoke<string>("reveal_secret", { id, headerKey, token });
+}
+
+export async function endReveal(token: string): Promise<void> {
+  await invoke("end_reveal", { token });
+}
+
+export async function saveService(draft: ServiceDraft): Promise<ServiceView> {
+  return invoke<ServiceView>("save_service", { draft });
+}
+
+export async function testDraft(draft: ServiceDraft): Promise<CheckEvidence> {
+  return invoke<CheckEvidence>("test_draft", { draft });
 }
 
 export async function maybeAskLaunchAtLogin(): Promise<AppSettings> {
@@ -116,8 +157,6 @@ export async function pendingLaunchPrompt(): Promise<boolean> {
 export async function answerLaunchPrompt(enable: boolean): Promise<AppSettings> {
   return invoke<AppSettings>("answer_launch_prompt", { enable });
 }
-
-export type ImportResult = { added: number; updated: number };
 
 export async function exportConfig(opts: {
   includeSecrets: boolean;
@@ -140,30 +179,6 @@ export async function resetAll(): Promise<void> {
 export function isCanceled(cause: unknown): boolean {
   const message = cause instanceof Error ? cause.message : String(cause);
   return message === "canceled" || message.endsWith("canceled");
-}
-
-export async function openEditor(id?: string): Promise<void> {
-  await invoke("open_editor", { id: id ?? null });
-}
-
-export async function closeEditor(): Promise<void> {
-  await invoke("close_editor");
-}
-
-export async function openDetail(id: string): Promise<void> {
-  await emit("pulse://open-detail", { id });
-}
-
-export async function getSettings(): Promise<AppSettings> {
-  return invoke<AppSettings>("get_settings");
-}
-
-export async function saveService(draft: ServiceDraft): Promise<ServiceView> {
-  return invoke<ServiceView>("save_service", { draft });
-}
-
-export async function testDraft(draft: ServiceDraft): Promise<CheckEvidence> {
-  return invoke<CheckEvidence>("test_draft", { draft });
 }
 
 export async function onEditorTarget(
@@ -211,6 +226,14 @@ export async function onServices(
   });
 }
 
+export async function onDetailService(
+  handler: (id: string) => void,
+): Promise<UnlistenFn> {
+  return listen<{ id: string }>("pulse://detail-service", (event) => {
+    if (event.payload.id) handler(event.payload.id);
+  });
+}
+
 export async function onPollerDead(
   handler: (payload: PollerDeadPayload) => void,
 ): Promise<UnlistenFn> {
@@ -243,7 +266,9 @@ export async function onSettings(
   });
 }
 
-export async function onAskLaunchAtLogin(handler: () => void): Promise<UnlistenFn> {
+export async function onAskLaunchAtLogin(
+  handler: () => void,
+): Promise<UnlistenFn> {
   return listen("pulse://ask-launch-at-login", () => {
     handler();
   });

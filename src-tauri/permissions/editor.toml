@@ -1,14 +1,4 @@
 [[permission]]
-identifier = "allow-get-settings"
-description = "Read settings so the editor can apply default interval/timeout."
-commands.allow = ["get_settings"]
-
-[[permission]]
-identifier = "allow-save-service"
-description = "Persist a service draft and start the first poll asynchronously."
-commands.allow = ["save_service"]
-
-[[permission]]
 identifier = "allow-test-draft"
 description = "Run Test now against an in-memory draft. Does not persist or reveal secrets."
 commands.allow = ["test_draft"]
