@@ -9,7 +9,7 @@ use super::secrets::persist_draft_headers;
 use super::{History, SecretStore, StoreError};
 use crate::domain::{
     AppSettings, DraftHeader, ExpectedStatus, HeaderSpec, HttpMethod, QuietHours, Service, Theme,
-    DEFAULT_INTERVAL_SEC, DEFAULT_TIMEOUT_MS,
+    DEFAULT_FAIL_THRESHOLD, DEFAULT_INTERVAL_SEC, DEFAULT_TIMEOUT_MS,
 };
 
 pub const DEFAULT_EXPORT_FILENAME: &str = "pulse-services.json";
@@ -40,10 +40,10 @@ pub struct ExportFile {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct ExportSettings {
     pub launch_at_login: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hotkey: Option<String>,
     pub theme: Theme,
     pub default_interval: u32,
@@ -51,8 +51,24 @@ pub struct ExportSettings {
     pub fail_threshold: u32,
     pub notifications: bool,
     pub sound: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quiet_hours: Option<QuietHours>,
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        Self {
+            launch_at_login: false,
+            hotkey: None,
+            theme: Theme::System,
+            default_interval: DEFAULT_INTERVAL_SEC,
+            default_timeout_ms: DEFAULT_TIMEOUT_MS,
+            fail_threshold: DEFAULT_FAIL_THRESHOLD,
+            notifications: true,
+            sound: true,
+            quiet_hours: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -178,9 +194,10 @@ fn format_schema_error(error: jsonschema::ValidationError<'_>) -> String {
 
 pub fn has_secret_values(file: &ExportFile) -> bool {
     file.services.iter().any(|service| {
-        service.headers.iter().any(|header| {
-            header.secret && header.value.as_ref().is_some_and(|value| !value.is_empty())
-        })
+        service
+            .headers
+            .iter()
+            .any(|header| header.secret && header.value.is_some())
     })
 }
 
@@ -244,12 +261,16 @@ impl ExportService {
         }
     }
 
-    fn draft_headers(&self) -> Vec<DraftHeader> {
+    fn draft_headers(&self, include_secrets: bool) -> Vec<DraftHeader> {
         self.headers
             .iter()
             .map(|header| DraftHeader {
                 key: header.key.clone(),
-                value: header.value.clone(),
+                value: if header.secret && !include_secrets {
+                    None
+                } else {
+                    header.value.clone()
+                },
                 secret: header.secret,
                 clear: false,
             })
@@ -295,7 +316,7 @@ impl ConfigStore {
     ) -> Result<ImportPreview, StoreError> {
         let file = parse_and_validate(bytes)?;
         reject_secrets_without_flag(&file, include_secrets)?;
-        let prepared = prepare_import(&[], &file)?;
+        let prepared = prepare_import(&[], &file, include_secrets)?;
         Service::validate_list(&prepared.services)?;
         Ok(ImportPreview {
             filename: filename.to_string(),
@@ -319,8 +340,9 @@ impl ConfigStore {
         reject_secrets_without_flag(&file, include_secrets)?;
 
         let existing = self.load_services()?;
-        let prepared = prepare_import(&existing, &file)?;
+        let prepared = prepare_import(&existing, &file, include_secrets)?;
         Service::validate_list(&prepared.services)?;
+        let settings = self.planned_settings(&file, replace_settings)?;
 
         let mut services = prepared.services;
         for (index, drafts, previous) in prepared.secret_writes {
@@ -329,20 +351,9 @@ impl ConfigStore {
         }
 
         self.save_services(&services)?;
-
-        let settings = if replace_settings {
-            if let Some(imported) = &file.settings {
-                let mut current = self.load_settings()?;
-                imported.apply_to(&mut current);
-                current.validate()?;
-                self.save_settings(&current)?;
-                Some(current)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        if let Some(settings) = &settings {
+            self.save_settings(settings)?;
+        }
 
         Ok((
             ImportOutcome {
@@ -352,6 +363,33 @@ impl ConfigStore {
             services,
             settings,
         ))
+    }
+
+    pub fn planned_import_settings(
+        &self,
+        bytes: &[u8],
+        replace_settings: bool,
+    ) -> Result<Option<AppSettings>, StoreError> {
+        let file = parse_and_validate(bytes)?;
+        self.planned_settings(&file, replace_settings)
+    }
+
+    fn planned_settings(
+        &self,
+        file: &ExportFile,
+        replace_settings: bool,
+    ) -> Result<Option<AppSettings>, StoreError> {
+        if !replace_settings {
+            return Ok(None);
+        }
+        let Some(imported) = &file.settings else {
+            return Ok(None);
+        };
+        let mut current = self.load_settings()?;
+        imported.apply_to(&mut current);
+        current.validate()?;
+        crate::platform::autostart::validate_hotkey(&current).map_err(StoreError::InvalidExport)?;
+        Ok(Some(current))
     }
 
     pub fn export_to_path(
@@ -413,7 +451,11 @@ struct PreparedImport {
     updated: u32,
 }
 
-fn prepare_import(existing: &[Service], file: &ExportFile) -> Result<PreparedImport, StoreError> {
+fn prepare_import(
+    existing: &[Service],
+    file: &ExportFile,
+    include_secrets: bool,
+) -> Result<PreparedImport, StoreError> {
     let now = Utc::now();
     let mut services = existing.to_vec();
     let mut secret_writes = Vec::new();
@@ -447,7 +489,7 @@ fn prepare_import(existing: &[Service], file: &ExportFile) -> Result<PreparedImp
         let service = incoming.to_service(id, created_at, now);
         service.validate()?;
 
-        let drafts = incoming.draft_headers();
+        let drafts = incoming.draft_headers(include_secrets);
         match index {
             Some(index) => {
                 services[index] = service;
@@ -652,6 +694,46 @@ mod tests {
     }
 
     #[test]
+    fn empty_secret_value_without_flag_is_rejected() {
+        let err = ConfigStore::preview_import(
+            &fixture_bytes("empty-secret-value.json"),
+            "empty-secret-value.json",
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, StoreError::SecretsWithoutFlag));
+    }
+
+    #[test]
+    fn empty_secret_value_without_flag_does_not_set_keychain() {
+        let (_dir, store, secrets, _history) = open_temp();
+        let mut draft = draft_from_sample("Bearer keep");
+        draft.id = Some("01JABCDEF0000000000000API".into());
+        store
+            .save_services(&[Service {
+                id: "01JABCDEF0000000000000API".into(),
+                ..sample_service()
+            }])
+            .unwrap();
+        store.save_service(&secrets, draft).unwrap();
+        let err = store
+            .import_from_bytes(
+                &secrets,
+                &fixture_bytes("empty-secret-value.json"),
+                false,
+                false,
+            )
+            .unwrap_err();
+        assert!(matches!(err, StoreError::SecretsWithoutFlag));
+        assert_eq!(
+            secrets
+                .get("01JABCDEF0000000000000API", "Authorization")
+                .unwrap(),
+            "Bearer keep"
+        );
+    }
+
+    #[test]
     fn secrets_without_flag_writes_nothing() {
         let (_dir, store, secrets, _history) = open_temp();
         store
@@ -849,6 +931,65 @@ mod tests {
         assert_eq!(outcome.added, 1);
         assert!(!services[0].id.is_empty());
         assert_ne!(services[0].id, "01JABCDEF0000000000000API");
+    }
+
+    #[test]
+    fn partial_settings_do_not_block_service_import() {
+        let (_dir, store, secrets, _history) = open_temp();
+        let bytes = br#"{
+  "schemaVersion": 1,
+  "settings": { "theme": "dark" },
+  "services": [{ "name": "API", "url": "https://api.example/health" }]
+}"#;
+        let (outcome, services, settings) = store
+            .import_from_bytes(&secrets, bytes, false, false)
+            .unwrap();
+        assert_eq!(outcome.added, 1);
+        assert_eq!(services[0].name, "API");
+        assert!(settings.is_none());
+        assert_eq!(store.load_settings().unwrap().theme, Theme::System);
+    }
+
+    #[test]
+    fn invalid_imported_settings_do_not_commit_services() {
+        let (_dir, store, secrets, _history) = open_temp();
+        store
+            .save_services(std::slice::from_ref(&sample_service()))
+            .unwrap();
+        let bytes = br#"{
+  "schemaVersion": 1,
+  "settings": {
+    "quietHours": { "start": "29:00", "end": "08:00", "days": [1] }
+  },
+  "services": [{ "name": "API", "url": "https://api.example/health" }]
+}"#;
+        let err = store
+            .import_from_bytes(&secrets, bytes, false, true)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            StoreError::Validation(ValidationError::QuietHours)
+        ));
+        let loaded = store.load_services().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, sample_service().id);
+        assert_eq!(store.load_settings().unwrap(), AppSettings::default());
+    }
+
+    #[test]
+    fn invalid_imported_hotkey_does_not_commit_services() {
+        let (_dir, store, secrets, _history) = open_temp();
+        let bytes = br#"{
+  "schemaVersion": 1,
+  "settings": { "hotkey": "nope" },
+  "services": [{ "name": "API", "url": "https://api.example/health" }]
+}"#;
+        let err = store
+            .import_from_bytes(&secrets, bytes, false, true)
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid hotkey"));
+        assert!(store.load_services().unwrap().is_empty());
+        assert_eq!(store.load_settings().unwrap(), AppSettings::default());
     }
 
     #[test]

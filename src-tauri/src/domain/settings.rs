@@ -16,9 +16,10 @@ pub const MIXED_REACHABILITY_HELP: &str = "If any check succeeds, Pulse assumes 
 
 use super::{MAX_INTERVAL_SEC, MIN_INTERVAL_SEC};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
+    #[default]
     System,
     Dark,
     Light,

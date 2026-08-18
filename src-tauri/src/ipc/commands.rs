@@ -470,6 +470,14 @@ pub async fn import_config(
     if !confirm_import(&app, &confirm_message(&preview, include_secrets)).await? {
         return Err(TransferError::Canceled);
     }
+    let planned_settings = {
+        let store = state.store.lock().expect("config store lock");
+        store.planned_import_settings(&bytes, replace_settings)?
+    };
+    if let Some(settings) = &planned_settings {
+        crate::platform::autostart::validate_hotkey(settings).map_err(TransferError::Dialog)?;
+        crate::platform::autostart::apply_hotkey(&app, settings).map_err(TransferError::Dialog)?;
+    }
     let was_empty = state.scheduler.views().is_empty();
     let (outcome, services, settings) = {
         let store = state.store.lock().expect("config store lock");
@@ -482,8 +490,6 @@ pub async fn import_config(
         crate::platform::autostart::notify_service_created();
     }
     if let Some(settings) = settings {
-        crate::platform::autostart::validate_hotkey(&settings).map_err(TransferError::Dialog)?;
-        crate::platform::autostart::apply_hotkey(&app, &settings).map_err(TransferError::Dialog)?;
         crate::platform::autostart::persist_side_effects(&app, &settings)
             .map_err(TransferError::Dialog)?;
     }
@@ -500,9 +506,10 @@ pub fn reset_all(app: AppHandle, state: State<'_, AppState>) -> Result<(), Trans
     }
     state.scheduler.clear_services();
     let settings = AppSettings::default();
-    crate::platform::autostart::apply_hotkey(&app, &settings).map_err(TransferError::Dialog)?;
+    let hotkey = crate::platform::autostart::apply_hotkey(&app, &settings);
     crate::platform::autostart::persist_side_effects(&app, &settings)
         .map_err(TransferError::Dialog)?;
+    hotkey.map_err(TransferError::Dialog)?;
     Ok(())
 }
 
