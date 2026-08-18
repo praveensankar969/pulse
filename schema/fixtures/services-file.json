@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    {
+      "id": "01JABCDEF0000000000000API",
+      "name": "Payments API",
+      "url": "https://pay.harbor.dev/health",
+      "method": "GET",
+      "headers": [
+        { "key": "Authorization", "secret": true },
+        { "key": "Accept", "secret": false, "value": "application/json" }
+      ],
+      "intervalSec": 60,
+      "timeoutMs": 10000,
+      "expectedStatus": "2xx",
+      "assertions": [
+        { "path": "status", "op": "equals", "value": "ok" },
+        { "path": "errors.length", "op": "equals", "value": 0 }
+      ],
+      "maxLatencyMs": 800,
+      "actionUrl": "https://grafana.harbor.dev/d/pay",
+      "notify": true,
+      "alwaysAlert": true,
+      "paused": false,
+      "followRedirects": true,
+      "group": "prod",
+      "createdAt": "2026-08-18T14:00:00Z",
+      "updatedAt": "2026-08-18T14:00:00Z"
+    }
+  ]
+}

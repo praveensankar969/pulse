@@ -17,10 +17,20 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+default = []
+# Lets secret header values sit in services.json. CI does not enable this.
+debug-plaintext-secrets = []
+
 [dependencies]
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

@@ -1,0 +1,10 @@
+{
+  "launchAtLogin": false,
+  "theme": "system",
+  "defaultInterval": 60,
+  "defaultTimeoutMs": 10000,
+  "failThreshold": 3,
+  "notifications": true,
+  "sound": true,
+  "askedLaunchAtLogin": false
+}

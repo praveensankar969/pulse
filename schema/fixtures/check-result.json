@@ -1,0 +1,18 @@
+{
+  "at": "2026-08-18T14:00:01Z",
+  "outcome": "ok",
+  "httpStatus": 200,
+  "latencyMs": 42,
+  "redirects": 0,
+  "assertionResults": [
+    {
+      "path": "status",
+      "op": "equals",
+      "ok": true,
+      "expected": "ok",
+      "actual": "ok"
+    }
+  ],
+  "bodyPreview": "{\"status\":\"ok\"}",
+  "state": "healthy"
+}

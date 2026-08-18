@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulsebar.dev/schema/config-v1.json",
+  "title": "Pulse on-disk config.json + services.json",
+  "oneOf": [
+    { "$ref": "#/$defs/configFile" },
+    { "$ref": "#/$defs/servicesFile" }
+  ],
+  "$defs": {
+    "configFile": {
+      "type": "object",
+      "required": ["schemaVersion", "settings"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "settings": { "$ref": "#/$defs/settings" }
+      }
+    },
+    "servicesFile": {
+      "type": "object",
+      "required": ["schemaVersion", "services"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "services": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/service" }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "launchAtLogin",
+        "theme",
+        "defaultInterval",
+        "defaultTimeoutMs",
+        "failThreshold",
+        "notifications",
+        "sound",
+        "askedLaunchAtLogin"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "launchAtLogin": { "type": "boolean" },
+        "hotkey": { "type": "string", "maxLength": 64 },
+        "theme": { "enum": ["system", "dark", "light"] },
+        "defaultInterval": { "type": "integer", "minimum": 15, "maximum": 600 },
+        "defaultTimeoutMs": { "type": "integer", "minimum": 500, "maximum": 60000 },
+        "failThreshold": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "notifications": { "type": "boolean" },
+        "sound": { "type": "boolean" },
+        "quietHours": { "$ref": "#/$defs/quietHours" },
+        "lastExportAt": { "type": "string", "format": "date-time" },
+        "askedLaunchAtLogin": { "type": "boolean" }
+      }
+    },
+    "quietHours": {
+      "type": "object",
+      "required": ["start", "end", "days"],
+      "additionalProperties": false,
+      "properties": {
+        "start": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+        "end": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+        "days": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 6 },
+          "maxItems": 7,
+          "uniqueItems": true
+        }
+      }
+    },
+    "header": {
+      "type": "object",
+      "required": ["key", "secret"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "secret": { "type": "boolean" },
+        "value": { "type": "string", "maxLength": 8192 }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "required": ["path", "op"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "op": { "enum": ["equals", "not_equals", "contains", "exists", "gt", "lt"] },
+        "value": {
+          "type": ["string", "number", "boolean", "null", "array", "object"],
+          "maxLength": 1024
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "url",
+        "method",
+        "headers",
+        "intervalSec",
+        "timeoutMs",
+        "expectedStatus",
+        "assertions",
+        "notify",
+        "alwaysAlert",
+        "paused",
+        "followRedirects",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "url": { "type": "string", "maxLength": 2048 },
+        "method": { "enum": ["GET", "HEAD", "POST"] },
+        "headers": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/header" }
+        },
+        "body": { "type": "string", "maxLength": 65536 },
+        "intervalSec": { "type": "integer", "minimum": 15, "maximum": 600 },
+        "timeoutMs": { "type": "integer", "minimum": 500, "maximum": 60000 },
+        "expectedStatus": {
+          "oneOf": [
+            { "const": "2xx" },
+            { "type": "integer", "minimum": 100, "maximum": 599 },
+            {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 100, "maximum": 599 },
+              "maxItems": 16
+            }
+          ]
+        },
+        "followRedirects": { "type": "boolean" },
+        "assertions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/assertion" }
+        },
+        "maxLatencyMs": { "type": "integer", "minimum": 1, "maximum": 60000 },
+        "actionUrl": { "type": "string", "maxLength": 2048 },
+        "notify": { "type": "boolean" },
+        "alwaysAlert": { "type": "boolean" },
+        "paused": { "type": "boolean" },
+        "failThreshold": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "group": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

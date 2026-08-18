@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulsebar.dev/schema/export-v1.json",
+  "title": "Pulse export",
+  "type": "object",
+  "required": ["schemaVersion", "services"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "includeSecrets": { "type": "boolean" },
+    "settings": { "$ref": "#/$defs/settings" },
+    "services": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/service" }
+    }
+  },
+  "$defs": {
+    "settings": {
+      "type": "object",
+      "properties": {
+        "launchAtLogin": { "type": "boolean" },
+        "hotkey": { "type": ["string", "null"], "maxLength": 64 },
+        "theme": { "enum": ["system", "dark", "light"] },
+        "defaultInterval": { "type": "integer", "minimum": 15, "maximum": 600 },
+        "defaultTimeoutMs": { "type": "integer", "minimum": 500, "maximum": 60000 },
+        "failThreshold": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "notifications": { "type": "boolean" },
+        "sound": { "type": "boolean" },
+        "quietHours": { "$ref": "#/$defs/quietHours" }
+      },
+      "additionalProperties": false
+    },
+    "quietHours": {
+      "type": "object",
+      "required": ["start", "end", "days"],
+      "properties": {
+        "start": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+        "end": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+        "days": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 6 },
+          "maxItems": 7,
+          "uniqueItems": true
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": ["name", "url"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "url": { "type": "string", "maxLength": 2048 },
+        "method": { "enum": ["GET", "HEAD", "POST"] },
+        "headers": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["key"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "value": { "type": "string", "maxLength": 8192 },
+              "secret": { "type": "boolean" }
+            }
+          }
+        },
+        "body": { "type": "string", "maxLength": 65536 },
+        "intervalSec": { "type": "integer", "minimum": 15, "maximum": 600 },
+        "timeoutMs": { "type": "integer", "minimum": 500, "maximum": 60000 },
+        "expectedStatus": {
+          "oneOf": [
+            { "const": "2xx" },
+            { "type": "integer", "minimum": 100, "maximum": 599 },
+            {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 100, "maximum": 599 },
+              "maxItems": 16
+            }
+          ]
+        },
+        "followRedirects": { "type": "boolean" },
+        "assertions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["path", "op"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "op": { "enum": ["equals", "not_equals", "contains", "exists", "gt", "lt"] },
+              "value": {
+                "type": ["string", "number", "boolean", "null", "array", "object"],
+                "maxLength": 1024
+              }
+            }
+          }
+        },
+        "maxLatencyMs": { "type": "integer", "minimum": 1, "maximum": 60000 },
+        "actionUrl": { "type": "string", "maxLength": 2048 },
+        "notify": { "type": "boolean" },
+        "alwaysAlert": { "type": "boolean" },
+        "paused": { "type": "boolean" },
+        "failThreshold": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "group": { "type": "string", "maxLength": 40 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
