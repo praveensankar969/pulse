@@ -61,7 +61,8 @@
       },
       "nsis": {
         "installMode": "currentUser",
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "template": "windows/nsis/installer.nsi"
       }
     }
   },

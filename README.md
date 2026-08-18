@@ -38,7 +38,7 @@ macOS and Windows only. Linux is out of scope.
 
 Distribution is **direct download only** from [GitHub Releases](https://github.com/pulsebar/pulse/releases): notarized macOS `.dmg` and Windows NSIS `.exe`. There is no Mac App Store or Microsoft Store package.
 
-Push a `v*` tag to run [`.github/workflows/release.yml`](.github/workflows/release.yml). That workflow builds macOS (Apple Silicon + Intel) and Windows, uploads the installers, and writes `latest.json` for the updater endpoint. The default binary does **not** enable the updater.
+Push a `v*` tag to run [`.github/workflows/release.yml`](.github/workflows/release.yml). That workflow builds macOS (Apple Silicon + Intel) and Windows, uploads the installers to a draft release, and publishes it only after every platform job succeeds. `latest.json` is written only when `TAURI_SIGNING_PRIVATE_KEY` is set (tauri-action skips it without `.sig` files). The default binary does **not** enable the updater. The Windows NSIS wizard and Apps & Features entry are titled **Pulse — Service Monitor**; `Pulse.app` / `Pulse.exe` stay `productName` Pulse.
 
 ### Unsigned macOS (right-click → Open)
 

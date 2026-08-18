@@ -30,3 +30,7 @@ jobs:
       - name: Cargo test
         working-directory: src-tauri
         run: cargo test
+
+      - name: Cargo check updater feature
+        working-directory: src-tauri
+        run: cargo check --features updater

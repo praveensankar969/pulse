@@ -89,7 +89,18 @@ jobs:
             - macOS: notarized `.dmg` when Apple secrets are set; otherwise unsigned (right-click → Open).
             - Windows: NSIS `.exe`. SmartScreen will warn until Authenticode is configured.
             - Updater is **off** in this binary (`updater` Cargo feature is not enabled).
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }} --config updater-artifacts.conf.json
+
+  # fail-fast is false so a red Windows/Intel job still finishes the other
+  # artifacts, but do not publish Latest until every matrix cell is green.
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"
