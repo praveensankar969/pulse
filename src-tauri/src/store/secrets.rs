@@ -460,6 +460,7 @@ fn is_identity_source(err: &(dyn std::error::Error + Send + Sync + 'static)) -> 
 fn identity_os_status(err: &(dyn std::error::Error + Send + Sync + 'static)) -> Option<i32> {
     #[cfg(target_os = "macos")]
     {
+        // Must be the same security-framework major keyring boxes (3.x).
         err.downcast_ref::<security_framework::base::Error>()
             .map(|error| error.code())
     }
