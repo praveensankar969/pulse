@@ -49,6 +49,10 @@ impl Paths {
         self.logs_dir().join("pulse.log")
     }
 
+    pub fn first_run_file(&self) -> PathBuf {
+        self.root.join("first-run.json")
+    }
+
     pub fn ensure_dir(&self) -> Result<(), StoreError> {
         std::fs::create_dir_all(&self.root)?;
         Ok(())
@@ -78,6 +82,10 @@ mod tests {
         assert_eq!(
             paths.log_file(),
             PathBuf::from("/tmp/dev.pulsebar.app/logs/pulse.log")
+        );
+        assert_eq!(
+            paths.first_run_file(),
+            PathBuf::from("/tmp/dev.pulsebar.app/first-run.json")
         );
     }
 }

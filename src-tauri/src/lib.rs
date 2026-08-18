@@ -1,6 +1,7 @@
 pub mod domain;
 pub mod ipc;
 pub mod eval;
+pub mod launch;
 pub mod logging;
 pub mod notify;
 pub mod platform;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 use tauri::{Manager, RunEvent};
 
 use crate::ipc::AppState;
+use crate::launch::{harbor_services, merge_demo, pause_all, take_first_run_popover, LaunchFlags};
 use crate::notify::{handle_activation, NotifyHub, OsNotifier};
 use crate::poller::scheduler::{Scheduler, SchedulerConfig, TauriEvents};
 use crate::store::{ConfigStore, History, Paths, SecretStore};
@@ -59,7 +61,18 @@ pub fn run() {
             let store = ConfigStore::open(paths.clone())?;
             let history = History::open_in(&paths)?;
             let secrets = Arc::new(SecretStore::new());
-            let services = store.load_services()?;
+            let flags = LaunchFlags::from_args(std::env::args());
+            let mut services = store.load_services()?;
+            if flags.demo {
+                services = merge_demo(services, harbor_services(chrono::Utc::now()));
+            }
+            if flags.paused {
+                // Persist so a bad poller build stays dark until the operator unpauses.
+                pause_all(&mut services);
+            }
+            if flags.demo || flags.paused {
+                store.save_services(&services)?;
+            }
             let settings = store.load_settings()?;
             let tray = crate::platform::tray::TrayHandle::new();
             let hub = NotifyHub::new(settings.sound);
@@ -95,6 +108,9 @@ pub fn run() {
             crate::platform::tray::install(app.handle(), tray)?;
             crate::platform::detail::install(app.handle());
             crate::platform::settings::install(app.handle());
+            if take_first_run_popover(&paths) {
+                crate::platform::tray::show_popover_if_hidden(app.handle());
+            }
             // Installed Windows toast may relaunch with `pulse:focus?id=`.
             let args: Vec<String> = std::env::args().collect();
             if crate::notify::parse_focus_args(&args).is_some() {

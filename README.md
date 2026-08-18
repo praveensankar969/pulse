@@ -2,7 +2,7 @@
 
 Local menu-bar / tray health monitor for HTTP endpoints you own. No account, no cloud.
 
-Pulse is a Tauri 2 + React 19 desktop app (macOS and Windows). This repo is early: `pnpm tauri dev` currently opens an empty popover only.
+Installer title **Pulse — Service Monitor**. Bundle id `dev.pulsebar.app`. macOS and Windows only.
 
 Installer title: **Pulse — Service Monitor**. Bundle ID: `dev.pulsebar.app`.
 
@@ -19,7 +19,27 @@ pnpm install
 pnpm tauri dev
 ```
 
-That starts Vite on port 1420 and opens the 372×480 popover. There is no poller, tray painter, or settings window yet.
+First launch opens the empty popover once so you can find the tray icon, then Pulse stays in the tray.
+
+### Kill switch
+
+A bad poller build: launch with `--paused` so every service starts paused (persisted to `services.json`).
+
+```sh
+pnpm tauri dev -- --paused
+```
+
+Unpause rows from the popover (`P`) or detail window when the build is good.
+
+### Harbor demo
+
+Optional 7-service Harbor fixture set (API, Web, Worker, Auth, Payments API, Docs, NAS) for screenshots / dogfood:
+
+```sh
+pnpm tauri dev -- --demo
+```
+
+Combine flags: `pnpm tauri dev -- --demo --paused`. Re-running `--demo` does not overwrite services you already edited.
 
 ## Test
 
@@ -28,7 +48,48 @@ pnpm test
 cd src-tauri && cargo test
 ```
 
-`pnpm test` is a placeholder until the UI has a test runner.
+## Data on disk
+
+Tauri `app_config_dir()` (no extra `config` leaf):
+
+| | |
+|---|---|
+| macOS | `~/Library/Application Support/dev.pulsebar.app/` |
+| Windows | `%APPDATA%\dev.pulsebar.app\` |
+
+Files: `config.json`, `services.json`, `history.sqlite3`, `logs/pulse.log`, `first-run.json`. Secret header values live in the OS keychain / Credential Manager, never in JSON.
+
+## Unsigned builds
+
+Until Developer ID / Authenticode exist, GitHub Release binaries may be unsigned.
+
+- **macOS:** right-click the app → **Open**. The first check that reads a just-saved secret shows “Pulse wants to use the keychain” — choose **Always Allow**.
+- **Windows:** SmartScreen may warn. Pulse payload stays under 20 MB; WebView2 is installed via the NSIS `embedBootstrapper` (~1.8 MB) if the machine does not already have it.
+- **Unsigned → later Developer ID:** macOS Keychain ACLs are bound to the signing identity. Re-enter secret headers. Pulse does not fall back to plaintext.
+
+## Notifications
+
+OS toasts fire once on down and once on recovery. Sound is best-effort (`settings.sound`). Permission is requested on the first successful save of a service with `notify: true`, not at launch.
+
+Click is **best-effort** show popover (never detail). Windows body-click cannot be QA’d in `tauri dev` (PowerShell name/icon). AUMID / `pulse:focus?id=` is only claimed on an **installed NSIS** build.
+
+## Manual QA checklist
+
+Match these before tagging. Plus the extras at the bottom.
+
+- [ ] First launch shows the empty popover **once**, then later launches stay in the tray.
+- [ ] Empty copy includes the Keychain hint: “macOS will ask Pulse to use the keychain — choose Always Allow.”
+- [ ] Tray left-click toggles the popover; click again **dismisses without flicker**.
+- [ ] `Esc` and click-outside hide the popover. Right-click menu does not toggle-fight the popover.
+- [ ] Windows overflow flyout / missing tray rect: popover appears at that monitor’s work-area bottom-right minus 12 px and does **not** hide if already shown.
+- [ ] Multi-monitor: popover stays on the monitor that owns the tray icon (or the cursor, for overflow).
+- [ ] New service is **Pending**, not green. Tray is hollow until the first non-pending result.
+- [ ] Snooze keeps the tray **red** and the primary label **Down** (Snoozed is an extra pill).
+- [ ] Notification click is best-effort show popover. Windows click is only claimed on an installed NSIS build — do not fail QA on `tauri dev` toasts.
+- [ ] `--paused` starts every service paused. `--demo` seeds the 7 Harbor rows.
+- [ ] Check now / Check all, pause (`P`), add (`Cmd/Ctrl+N`), Enter opens the action URL, Shift+Enter opens detail.
+- [ ] Import / export / reset; export with secrets uses the `.SECRETS.json` name.
+- [ ] Quiet hours queue downs; Always alert bypasses the window. Launch-at-login prompt fires once after first save.
 
 ## Platforms
 

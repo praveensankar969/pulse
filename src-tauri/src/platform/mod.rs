@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod detail;
 pub mod settings;
 pub mod tray;

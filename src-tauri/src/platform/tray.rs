@@ -15,6 +15,7 @@ use crate::domain::{ServiceView, UiState};
 use crate::ipc::AppState;
 
 pub const SUPPRESS_BLUR_MS: u64 = 250;
+pub const WORK_AREA_INSET: i32 = 12;
 
 const OK: [u8; 3] = [0x3d, 0xdc, 0x97];
 const WARN: [u8; 3] = [0xf5, 0xb9, 0x42];
@@ -480,21 +481,129 @@ fn place_popover<R: tauri::Runtime>(window: &WebviewWindow<R>, rect: &tauri::Rec
     } else {
         y - f64::from(outer.height)
     };
-    let _ = window.set_position(PhysicalPosition::new(left as i32, top as i32));
+    let cx = (x + width / 2.0) as i32;
+    let cy = (y + height / 2.0) as i32;
+    let (left, top) = match work_area_containing(window, cx, cy) {
+        Some(area) => clamp_to_work_area(
+            left as i32,
+            top as i32,
+            outer.width,
+            outer.height,
+            area,
+            WORK_AREA_INSET,
+        ),
+        None => (left as i32, top as i32),
+    };
+    let _ = window.set_position(PhysicalPosition::new(left, top));
 }
 
 fn place_work_area_fallback<R: tauri::Runtime>(window: &WebviewWindow<R>) {
-    let Ok(Some(monitor)) = window.current_monitor() else {
-        let _ = window.set_position(LogicalPosition::new(12.0, 12.0));
-        return;
-    };
-    let area = monitor.work_area();
     let Ok(outer) = window.outer_size() else {
         return;
     };
-    let x = area.position.x + area.size.width as i32 - outer.width as i32 - 12;
-    let y = area.position.y + area.size.height as i32 - outer.height as i32 - 12;
+    let Some(area) = fallback_work_area(window) else {
+        let _ = window.set_position(LogicalPosition::new(
+            f64::from(WORK_AREA_INSET),
+            f64::from(WORK_AREA_INSET),
+        ));
+        return;
+    };
+    let (x, y) = work_area_anchor(area, outer.width, outer.height, WORK_AREA_INSET);
     let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+type WorkArea = (i32, i32, u32, u32);
+
+/// Bottom-right of the work area, inset so overflow flyouts stay on-screen.
+pub fn work_area_anchor(area: WorkArea, pop_w: u32, pop_h: u32, inset: i32) -> (i32, i32) {
+    let (area_x, area_y, area_w, area_h) = area;
+    (
+        area_x + area_w as i32 - pop_w as i32 - inset,
+        area_y + area_h as i32 - pop_h as i32 - inset,
+    )
+}
+
+/// Keep the popover on the same monitor as the tray / cursor.
+pub fn clamp_to_work_area(
+    x: i32,
+    y: i32,
+    pop_w: u32,
+    pop_h: u32,
+    area: WorkArea,
+    inset: i32,
+) -> (i32, i32) {
+    let (area_x, area_y, area_w, area_h) = area;
+    let min_x = area_x + inset;
+    let min_y = area_y + inset;
+    let max_x = area_x + area_w as i32 - pop_w as i32 - inset;
+    let max_y = area_y + area_h as i32 - pop_h as i32 - inset;
+    (
+        x.clamp(min_x, max_x.max(min_x)),
+        y.clamp(min_y, max_y.max(min_y)),
+    )
+}
+
+/// Which monitor rectangle contains `(px, py)`. Used for multi-monitor placement.
+pub fn monitor_containing(monitors: &[WorkArea], px: i32, py: i32) -> Option<usize> {
+    monitors
+        .iter()
+        .position(|&(x, y, w, h)| px >= x && py >= y && px < x + w as i32 && py < y + h as i32)
+}
+
+fn work_area_of(monitor: &tauri::Monitor) -> WorkArea {
+    let area = monitor.work_area();
+    (
+        area.position.x,
+        area.position.y,
+        area.size.width,
+        area.size.height,
+    )
+}
+
+fn monitor_bounds(monitor: &tauri::Monitor) -> WorkArea {
+    let pos = monitor.position();
+    let size = monitor.size();
+    (pos.x, pos.y, size.width, size.height)
+}
+
+fn work_area_containing<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    px: i32,
+    py: i32,
+) -> Option<WorkArea> {
+    let monitors = window.available_monitors().ok()?;
+    let idx = monitor_containing(
+        &monitors.iter().map(monitor_bounds).collect::<Vec<_>>(),
+        px,
+        py,
+    )?;
+    monitors.get(idx).map(work_area_of)
+}
+
+fn fallback_work_area<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Option<WorkArea> {
+    if let Ok(cursor) = window.cursor_position() {
+        if let Some(area) = work_area_containing(window, cursor.x as i32, cursor.y as i32) {
+            return Some(area);
+        }
+    }
+    if let Some(tray) = window.app_handle().try_state::<TrayHandle>() {
+        if let Some(rect) = tray.last_rect() {
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let (x, y) = match rect.position {
+                Position::Physical(pos) => (pos.x, pos.y),
+                Position::Logical(pos) => ((pos.x * scale) as i32, (pos.y * scale) as i32),
+            };
+            if let Some(area) = work_area_containing(window, x, y) {
+                return Some(area);
+            }
+        }
+    }
+    window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .map(|monitor| work_area_of(&monitor))
 }
 
 fn paint_size() -> u32 {
@@ -937,6 +1046,39 @@ mod tests {
         let down = paint_mark(TrayMark::Down { count: 2 }, 36, 18.0);
         let healthy = paint_mark(TrayMark::Healthy, 36, 18.0);
         assert_ne!(down, healthy);
+    }
+
+    #[test]
+    fn work_area_fallback_is_bottom_right_minus_inset() {
+        assert_eq!(
+            work_area_anchor((0, 0, 1920, 1080), 372, 480, 12),
+            (1920 - 372 - 12, 1080 - 480 - 12)
+        );
+        let secondary = (1920, 0, 1440, 900);
+        assert_eq!(
+            work_area_anchor(secondary, 372, 480, 12),
+            (1920 + 1440 - 372 - 12, 900 - 480 - 12)
+        );
+    }
+
+    #[test]
+    fn clamp_keeps_popover_on_the_same_monitor() {
+        let left = (0, 0, 1920, 1080);
+        let (x, y) = clamp_to_work_area(3000, 20, 372, 480, left, 12);
+        assert_eq!(x, 1920 - 372 - 12);
+        assert_eq!(y, 20);
+        let right = (1920, 0, 1440, 900);
+        let (x, y) = clamp_to_work_area(100, 10, 372, 480, right, 12);
+        assert_eq!(x, 1920 + 12);
+        assert_eq!(y, 12);
+    }
+
+    #[test]
+    fn monitor_containing_picks_the_display_under_the_point() {
+        let monitors = [(0, 0, 1920, 1080), (1920, 0, 1440, 900)];
+        assert_eq!(monitor_containing(&monitors, 10, 10), Some(0));
+        assert_eq!(monitor_containing(&monitors, 2000, 100), Some(1));
+        assert_eq!(monitor_containing(&monitors, -20, 10), None);
     }
 
     #[test]

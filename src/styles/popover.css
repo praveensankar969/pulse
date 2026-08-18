@@ -115,6 +115,13 @@
   font-size: 13px;
   line-height: 1.45;
   max-width: 28ch;
+  margin: 0 0 12px;
+}
+
+.empty-state .empty-hint {
+  color: var(--text-2);
+  font-size: 12px;
+  max-width: 32ch;
   margin: 0 0 16px;
 }
 

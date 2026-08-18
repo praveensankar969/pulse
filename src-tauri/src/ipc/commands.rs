@@ -18,9 +18,11 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
-use crate::domain::{AppSettings, CheckEvidence, CheckResult, CompactSample, ServiceDraft, ServiceView};
-use crate::notify::{request_permission_on_notify_save, NotifyHub};
+use crate::domain::{
+    AppSettings, CheckEvidence, CheckResult, CompactSample, ServiceDraft, ServiceView,
+};
 use crate::ipc::draft::run_test_draft;
+use crate::notify::{request_permission_on_notify_save, NotifyHub};
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
 use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
