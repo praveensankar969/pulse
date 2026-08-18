@@ -1,10 +1,7 @@
 pub mod domain;
 pub mod ipc;
-<<<<<<< HEAD
 pub mod eval;
-=======
 pub mod logging;
->>>>>>> 6bae09b (Scheduler, stagger, pause + logging + watchdog)
 pub mod notify;
 pub mod platform;
 pub mod poller;
@@ -56,6 +53,7 @@ pub fn run() {
             let secrets = Arc::new(SecretStore::new());
             let services = store.load_services()?;
             let settings = store.load_settings()?;
+            let tray = crate::platform::tray::TrayHandle::new();
             let scheduler = Scheduler::new(SchedulerConfig {
                 services,
                 settings,
@@ -64,8 +62,7 @@ pub fn run() {
                 events: Arc::new(TauriEvents(app.handle().clone())),
                 notifier: Box::new(NoopNotifier),
                 enable_jitter: true,
-                // Tray painter in PR 10 reads poller_dead() / this hook.
-                on_poller_dead: Arc::new(|_| {}),
+                on_poller_dead: tray.poller_dead_hook(),
             })?;
             let handle = scheduler.handle();
             let wake = crate::platform::wake::listen({
@@ -76,10 +73,16 @@ pub fn run() {
                 }
             });
             app.manage(wake);
+            tray.apply_services(&handle.views());
+            if handle.poller_dead() {
+                tray.set_poller_dead(true);
+            }
             tauri::async_runtime::spawn(async move {
                 scheduler.run().await;
             });
+            app.manage(tray.clone());
             app.manage(AppState::new(store, secrets, handle));
+            crate::platform::tray::install(app.handle(), tray)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -91,6 +94,7 @@ pub fn run() {
             ipc::commands::check_now,
             ipc::commands::check_all,
             ipc::commands::delete_service,
+            platform::tray::should_suppress_blur,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
