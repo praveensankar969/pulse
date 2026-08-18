@@ -135,10 +135,14 @@ impl History {
     }
 
     /// On OS sleep while down: record slept_at. Do not fold the clock yet.
+    /// No-op when already paused — the pause interval covers laptop sleep.
     pub fn apply_sleep(&self, service_id: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
         let Some(mut state) = self.get_runtime(service_id)? else {
             return Ok(());
         };
+        if state.paused_at.is_some() {
+            return Ok(());
+        }
         if state.status == MachineStatus::Down && state.slept_at.is_none() {
             state.slept_at = Some(now);
             self.put_runtime(service_id, &state)?;
@@ -147,10 +151,18 @@ impl History {
     }
 
     /// On wake: if still down, add (now - slept_at) to down_clock_adjust_ms.
+    /// While paused, only clear slept_at so the overlapping window is not added twice.
     pub fn apply_wake(&self, service_id: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
         let Some(mut state) = self.get_runtime(service_id)? else {
             return Ok(());
         };
+        if state.paused_at.is_some() {
+            if state.slept_at.is_some() {
+                state.slept_at = None;
+                self.put_runtime(service_id, &state)?;
+            }
+            return Ok(());
+        }
         let slept_at = state.slept_at;
         fold_clock_gap(&mut state, slept_at, now);
         state.slept_at = None;
@@ -679,6 +691,29 @@ mod tests {
         assert_eq!(after.paused_at, None);
         assert_eq!(after.down_clock_adjust_ms, 120_000);
         assert_eq!(after.status, MachineStatus::Down);
+    }
+
+    #[test]
+    fn pause_covers_overlapping_sleep() {
+        let (_dir, history) = open_temp();
+        let down_at = at_ms(1_700_000_000_000);
+        let pause_at = at_ms(1_700_000_060_000);
+        let sleep_at = at_ms(1_700_000_090_000);
+        let wake_at = at_ms(1_700_000_150_000);
+        let unpause_at = at_ms(1_700_000_180_000);
+        history.put_runtime("svc-1", &down_state(down_at)).unwrap();
+        history.apply_pause("svc-1", pause_at).unwrap();
+        history.apply_sleep("svc-1", sleep_at).unwrap();
+        let mid = history.load_runtime("svc-1").unwrap();
+        assert_eq!(mid.paused_at, Some(pause_at));
+        assert!(mid.slept_at.is_none());
+
+        history.apply_wake("svc-1", wake_at).unwrap();
+        history.apply_unpause("svc-1", unpause_at).unwrap();
+        let after = history.load_runtime("svc-1").unwrap();
+        assert_eq!(after.paused_at, None);
+        assert_eq!(after.slept_at, None);
+        assert_eq!(after.down_clock_adjust_ms, 120_000);
     }
 
     #[test]
