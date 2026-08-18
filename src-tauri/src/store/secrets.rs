@@ -16,6 +16,11 @@ use crate::domain::{
 pub const KEYCHAIN_SERVICE: &str = "dev.pulsebar.app";
 pub const REVEAL_TTL_MS: u64 = 5_000;
 
+/// errSecAuthFailed. Unsigned → Developer ID cannot read the old item.
+const ERR_SEC_AUTH_FAILED: i32 = -25293;
+/// `SecCopyErrorMessageString` for `-25293`. Display omits the numeric code.
+const ERR_SEC_AUTH_FAILED_MESSAGE: &str = "the user name or passphrase you entered is not correct.";
+
 /// Account: `{service_id}/{header_key_lower}`.
 pub fn account(service_id: &str, header_key: &str) -> String {
     format!("{}/{}", service_id, header_key.to_ascii_lowercase())
@@ -361,30 +366,41 @@ pub fn resolve_secrets(
     Ok(ResolvedHeaders(resolved))
 }
 
+pub fn validate_draft_headers(draft: &[DraftHeader]) -> Result<(), StoreError> {
+    let mut seen = HashSet::with_capacity(draft.len());
+    for header in draft {
+        if header.key.is_empty() || header.key.len() > 128 {
+            return Err(crate::domain::ValidationError::HeaderKey.into());
+        }
+        if !seen.insert(header.key.to_ascii_lowercase()) {
+            return Err(StoreError::Validation(
+                crate::domain::ValidationError::DuplicateHeader(header.key.clone()),
+            ));
+        }
+        if let Some(value) = header.value.as_deref() {
+            if !is_mask(value) && value.len() > 8192 {
+                return Err(crate::domain::ValidationError::HeaderValue.into());
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn persist_draft_headers(
     secrets: &SecretStore,
     service_id: &str,
     draft: &[DraftHeader],
     previous_secret_keys: &[String],
 ) -> Result<Vec<HeaderSpec>, StoreError> {
-    let mut seen = HashSet::with_capacity(draft.len());
-    let mut persisted = Vec::with_capacity(draft.len());
+    validate_draft_headers(draft)?;
 
+    let mut persisted = Vec::with_capacity(draft.len());
     for header in draft {
-        let folded = header.key.to_ascii_lowercase();
-        if !seen.insert(folded) {
-            return Err(StoreError::Validation(
-                crate::domain::ValidationError::DuplicateHeader(header.key.clone()),
-            ));
-        }
         if header.secret {
             if header.clear {
                 secrets.delete(service_id, &header.key)?;
             } else if let Some(value) = header.value.as_deref() {
                 if !is_mask(value) {
-                    if value.len() > 8192 {
-                        return Err(crate::domain::ValidationError::HeaderValue.into());
-                    }
                     secrets.set(service_id, &header.key, value)?;
                 }
             }
@@ -427,21 +443,31 @@ fn classify_write(header_key: &str, error: keyring::Error) -> SecretError {
 
 fn is_identity_error(error: &keyring::Error) -> bool {
     match error {
-        keyring::Error::NoStorageAccess(_) => true,
-        keyring::Error::PlatformFailure(inner) => looks_like_identity(&inner.to_string()),
+        // NoStorageAccess is a locked/missing store, not an ACL/identity miss.
+        keyring::Error::PlatformFailure(inner) => is_identity_source(inner.as_ref()),
         _ => false,
     }
 }
 
-fn looks_like_identity(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    message.contains("auth")
-        || message.contains("acl")
-        || message.contains("denied")
-        || message.contains("not allowed")
-        || message.contains("user interaction")
-        || message.contains("errsecauthfailed")
-        || message.contains("-25293")
+fn is_identity_source(err: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    if identity_os_status(err) == Some(ERR_SEC_AUTH_FAILED) {
+        return true;
+    }
+    err.to_string()
+        .eq_ignore_ascii_case(ERR_SEC_AUTH_FAILED_MESSAGE)
+}
+
+fn identity_os_status(err: &(dyn std::error::Error + Send + Sync + 'static)) -> Option<i32> {
+    #[cfg(target_os = "macos")]
+    {
+        err.downcast_ref::<security_framework::base::Error>()
+            .map(|error| error.code())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = err;
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -528,10 +554,14 @@ impl RevealRegistry {
         }
         if session.service_id != service_id || !session.header_key.eq_ignore_ascii_case(header_key)
         {
+            // Bind mismatch must not burn a valid token.
             return Err(RevealError::InvalidToken);
         }
         match secrets.get(service_id, header_key) {
-            Ok(value) => Ok(value),
+            Ok(value) => {
+                self.sessions.remove(token);
+                Ok(value)
+            }
             Err(SecretError::NotFound(key) | SecretError::IdentityChanged(key)) => {
                 Err(RevealError::MissingSecret(key))
             }
@@ -604,6 +634,12 @@ mod tests {
 
     impl std::error::Error for DummyErr {}
 
+    fn auth_failed_platform_error() -> keyring::Error {
+        keyring::Error::PlatformFailure(Box::new(DummyErr(
+            "The user name or passphrase you entered is not correct.",
+        )))
+    }
+
     fn sample_service(id: &str) -> Service {
         Service {
             id: id.to_string(),
@@ -672,11 +708,7 @@ mod tests {
     fn identity_change_does_not_delete_item() {
         let store = SecretStore::for_test();
         store.set("svc", "Authorization", "keep-me").unwrap();
-        store.set_next_error(
-            "svc",
-            "Authorization",
-            keyring::Error::NoStorageAccess(Box::new(DummyErr("acl denied"))),
-        );
+        store.set_next_error("svc", "Authorization", auth_failed_platform_error());
         assert!(matches!(
             store.get("svc", "Authorization"),
             Err(SecretError::IdentityChanged(_))
@@ -685,6 +717,43 @@ mod tests {
         assert_eq!(store.get("svc", "Authorization").unwrap(), "keep-me");
         store.set("svc", "Authorization", "new-token").unwrap();
         assert!(!store.service_identity_changed("svc"));
+    }
+
+    #[test]
+    fn no_storage_access_is_not_identity_change() {
+        let store = SecretStore::for_test();
+        store.set("svc", "Authorization", "keep-me").unwrap();
+        store.set_next_error(
+            "svc",
+            "Authorization",
+            keyring::Error::NoStorageAccess(Box::new(DummyErr("errSecNotAvailable"))),
+        );
+        assert!(matches!(
+            store.get("svc", "Authorization"),
+            Err(SecretError::Backend { .. })
+        ));
+        assert!(!store.service_identity_changed("svc"));
+        assert_eq!(store.get("svc", "Authorization").unwrap(), "keep-me");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn auth_failed_os_status_sets_identity_flag() {
+        let store = SecretStore::for_test();
+        store.set("svc", "Authorization", "keep-me").unwrap();
+        store.set_next_error(
+            "svc",
+            "Authorization",
+            keyring::Error::PlatformFailure(Box::new(security_framework::base::Error::from_code(
+                ERR_SEC_AUTH_FAILED,
+            ))),
+        );
+        assert!(matches!(
+            store.get("svc", "Authorization"),
+            Err(SecretError::IdentityChanged(_))
+        ));
+        assert!(store.service_identity_changed("svc"));
+        assert_eq!(store.get("svc", "Authorization").unwrap(), "keep-me");
     }
 
     #[test]
@@ -780,11 +849,7 @@ mod tests {
     fn identity_read_failure_is_missing_secret_and_sets_flag() {
         let store = SecretStore::for_test();
         store.set("svc", "Authorization", "tok").unwrap();
-        store.set_next_error(
-            "svc",
-            "Authorization",
-            keyring::Error::NoStorageAccess(Box::new(DummyErr("identity"))),
-        );
+        store.set_next_error("svc", "Authorization", auth_failed_platform_error());
         let service = sample_service("svc");
         let err = store.resolve_service(&service).unwrap_err();
         assert!(err.identity_changed);
@@ -926,6 +991,9 @@ mod tests {
 
         let grant = reveals.begin("svc", "Authorization");
         assert_eq!(grant.ttl_ms, 5_000);
+        assert!(reveals
+            .reveal(&grant.token, "svc", "X-Api-Key", &secrets)
+            .is_err());
         assert_eq!(
             reveals
                 .reveal(&grant.token, "svc", "Authorization", &secrets)
@@ -933,12 +1001,60 @@ mod tests {
             "Bearer tok"
         );
         assert!(reveals
-            .reveal(&grant.token, "svc", "X-Api-Key", &secrets)
-            .is_err());
-        reveals.end(&grant.token);
-        assert!(reveals
             .reveal(&grant.token, "svc", "Authorization", &secrets)
             .is_err());
+    }
+
+    #[test]
+    fn persist_validates_before_any_keychain_write() {
+        let store = SecretStore::for_test();
+        store.set("svc", "Authorization", "old").unwrap();
+        let err = persist_draft_headers(
+            &store,
+            "svc",
+            &[
+                DraftHeader {
+                    key: "Authorization".into(),
+                    value: Some("new-token".into()),
+                    secret: true,
+                    clear: false,
+                },
+                DraftHeader {
+                    key: "authorization".into(),
+                    value: Some("other".into()),
+                    secret: true,
+                    clear: false,
+                },
+            ],
+            &[],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            StoreError::Validation(crate::domain::ValidationError::DuplicateHeader(_))
+        ));
+        assert_eq!(store.get("svc", "Authorization").unwrap(), "old");
+
+        let too_long = persist_draft_headers(
+            &store,
+            "svc-2",
+            &[DraftHeader {
+                key: "Authorization".into(),
+                value: Some("x".repeat(8193)),
+                secret: true,
+                clear: false,
+            }],
+            &[],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            too_long,
+            StoreError::Validation(crate::domain::ValidationError::HeaderValue)
+        ));
+        assert!(matches!(
+            store.get("svc-2", "Authorization"),
+            Err(SecretError::NotFound(_))
+        ));
     }
 
     #[test]

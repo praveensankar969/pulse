@@ -213,6 +213,7 @@ impl ConfigStore {
             updated_at: now,
         };
         preview.validate()?;
+        super::secrets::validate_draft_headers(&draft.headers)?;
 
         let headers = persist_draft_headers(secrets, &id, &draft.headers, &previous_secret_keys)?;
         let service = Service { headers, ..preview };
