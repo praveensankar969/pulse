@@ -2,8 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, State, WebviewWindow};
 
-use crate::domain::{CheckResult, ServiceView};
+use crate::domain::{AppSettings, CheckEvidence, CheckResult, ServiceDraft, ServiceView};
+use crate::ipc::draft::run_test_draft;
 use crate::poller::scheduler::{SchedulerError, SchedulerHandle};
+use crate::poller::HttpClient;
 use crate::store::secrets::ensure_reveal_window;
 use crate::store::{BeginRevealResponse, ConfigStore, RevealError, RevealRegistry, SecretStore};
 
@@ -12,6 +14,7 @@ pub struct AppState {
     pub secrets: Arc<SecretStore>,
     pub reveals: Mutex<RevealRegistry>,
     pub scheduler: SchedulerHandle,
+    pub http: HttpClient,
 }
 
 impl AppState {
@@ -21,6 +24,7 @@ impl AppState {
             secrets,
             reveals: Mutex::new(RevealRegistry::new()),
             scheduler,
+            http: HttpClient::new(),
         }
     }
 }
@@ -100,6 +104,48 @@ pub fn end_reveal(
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_services(state: State<'_, AppState>) -> Vec<ServiceView> {
     state.scheduler.views()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, SchedulerError> {
+    Ok(state
+        .store
+        .lock()
+        .expect("config store lock")
+        .load_settings()?)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn save_service(
+    state: State<'_, AppState>,
+    draft: ServiceDraft,
+) -> Result<ServiceView, SchedulerError> {
+    let service = {
+        let store = state.store.lock().expect("config store lock");
+        store.save_service(&state.secrets, draft)?
+    };
+    let id = service.id.clone();
+    state.scheduler.upsert(service);
+    state.scheduler.view(&id)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn test_draft(
+    state: State<'_, AppState>,
+    draft: ServiceDraft,
+) -> Result<CheckEvidence, SchedulerError> {
+    // Resolve secrets on the Rust side. The editor must not call reveal_secret.
+    Ok(run_test_draft(&state.secrets, &state.http, draft).await)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn open_editor(app: AppHandle, id: Option<String>) -> Result<(), String> {
+    crate::ipc::windows::open_editor(&app, id)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn close_editor(app: AppHandle) -> Result<(), String> {
+    crate::ipc::windows::close_editor(&app)
 }
 
 #[tauri::command(rename_all = "camelCase")]

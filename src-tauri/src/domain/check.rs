@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{AssertionResult, ErrorKind};
+use super::{AssertionResult, ErrorKind, MessageArgs};
 
 /// Evaluator output. Not flap-damped machine state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +68,28 @@ pub struct CheckEvidence {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_preview: Option<String>,
+}
+
+impl CheckEvidence {
+    /// Hard fail with no HTTP. Used by Test now and live checks.
+    pub fn missing_secret(key: &str, at: DateTime<Utc>) -> Self {
+        Self {
+            at,
+            outcome: OutcomeClass::Hard,
+            http_status: None,
+            latency_ms: None,
+            redirects: None,
+            headers_stripped_on_redirect: None,
+            assertion_results: Vec::new(),
+            assertion_skipped: None,
+            error_kind: Some(ErrorKind::MissingSecret),
+            error: Some(ErrorKind::MissingSecret.user_message(&MessageArgs {
+                secret_key: Some(key),
+                ..MessageArgs::default()
+            })),
+            body_preview: None,
+        }
+    }
 }
 
 /// Live check after on_result. test_draft returns CheckEvidence, not this.

@@ -85,11 +85,17 @@ pub fn run() {
             crate::platform::tray::install(app.handle(), tray)?;
             Ok(())
         })
+        .on_window_event(ipc::windows::on_window_event)
         .invoke_handler(tauri::generate_handler![
             ipc::commands::begin_reveal,
             ipc::commands::reveal_secret,
             ipc::commands::end_reveal,
             ipc::commands::list_services,
+            ipc::commands::get_settings,
+            ipc::commands::save_service,
+            ipc::commands::test_draft,
+            ipc::commands::open_editor,
+            ipc::commands::close_editor,
             ipc::commands::set_paused,
             ipc::commands::check_now,
             ipc::commands::check_all,

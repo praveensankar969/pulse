@@ -12,8 +12,8 @@ use tokio::time::sleep;
 use crate::domain::view::{assemble_view, compact_sample};
 use crate::domain::MachineStatus;
 use crate::domain::{
-    AppSettings, CheckEvidence, CheckResult, ErrorKind, MessageArgs, OutcomeClass, RuntimeState,
-    Service, ServiceStatus, ServiceView,
+    AppSettings, CheckEvidence, CheckResult, ErrorKind, OutcomeClass, RuntimeState, Service,
+    ServiceStatus, ServiceView,
 };
 use crate::eval::{evaluate_at, outcome_of};
 use crate::notify::{
@@ -26,7 +26,7 @@ use crate::poller::offline::{
 };
 use crate::poller::state_machine::{fail_threshold, on_result, ProbeEvent};
 use crate::poller::HttpClient;
-use crate::store::{History, MissingSecret, SecretStore, StoreError};
+use crate::store::{History, SecretStore, StoreError};
 
 pub const CONCURRENCY: usize = 4;
 pub const STAGGER_CAP: Duration = Duration::from_secs(15);
@@ -727,8 +727,8 @@ impl Inner {
             }
         }
         if !paused && !self.stopped.load(Ordering::SeqCst) {
-            let delay = self.stagger_for(&id);
-            self.spawn_service(id, delay);
+            // Save / edit: first poll is async and starts immediately (no start stagger).
+            self.spawn_service(id, Duration::ZERO);
         }
     }
 
@@ -903,7 +903,7 @@ impl Inner {
                 (evaluate_at(service, raw, now), identity)
             }
             Err(missing) => (
-                missing_secret_evidence(&missing, now),
+                CheckEvidence::missing_secret(&missing.key, now),
                 missing.identity_changed || self.secrets.service_identity_changed(&service.id),
             ),
         };
@@ -1391,6 +1391,40 @@ mod tests {
             assert!(runtime.last_check_at.is_some());
             assert_eq!(history.samples_24h("a", Utc::now()).unwrap().len(), 1);
         });
+
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn save_upsert_is_pending_until_first_poll() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+            .mount(&server)
+            .await;
+
+        let (_dir, history) = open_history();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = start(
+            vec![],
+            history,
+            Arc::new(SecretStore::for_test()),
+            Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+        );
+
+        handle.upsert(sample("new", format!("{}/health", server.uri()), 15));
+        let before = handle.view("new").unwrap();
+        assert_eq!(before.state, UiState::Pending);
+        assert!(before.last_result.is_none());
+
+        let view = wait_state(&handle, "new", UiState::Healthy).await;
+        assert_eq!(view.last_result.unwrap().evidence.http_status, Some(200));
 
         handle.shutdown();
         let _ = task.await;

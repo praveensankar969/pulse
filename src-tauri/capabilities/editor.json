@@ -1,7 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "Add/edit window. Press-and-hold secret reveal allowed.",
+  "description": "Add/edit window. Press-and-hold secret reveal allowed. Test now does not use reveal_secret.",
   "windows": ["editor"],
-  "permissions": ["core:default", "allow-reveal"]
+  "permissions": [
+    "core:default",
+    "allow-reveal",
+    "allow-editor",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-set-title"
+  ]
 }

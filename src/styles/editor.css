@@ -1,0 +1,145 @@
+.editor {
+  min-height: 100%;
+  background: var(--bg-1);
+  color: var(--text-0);
+}
+
+.editor-form {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 18px;
+}
+
+.editor-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+}
+
+.field > span,
+.field-label {
+  font-size: 11px;
+  color: var(--text-1);
+}
+
+.field input,
+.field select,
+.field textarea,
+.header-edit-row input,
+.assert-edit-row input,
+.assert-edit-row select {
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.header-edit-row input:focus,
+.assert-edit-row input:focus,
+.assert-edit-row select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.mono,
+.field input.mono,
+.field textarea,
+.header-edit-row input,
+.assert-edit-row input {
+  font-family: var(--mono);
+}
+
+.row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.danger-text {
+  color: var(--down);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.check-row.tight {
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.check-row input {
+  accent-color: var(--accent);
+}
+
+.headers-edit,
+.header-edit-row,
+.assert-edit-row {
+  display: grid;
+  gap: 6px;
+}
+
+.header-edit-row {
+  grid-template-columns: 1fr 1fr auto auto;
+  align-items: center;
+}
+
+.assert-edit-row {
+  grid-template-columns: 1fr 110px 1fr auto;
+  align-items: center;
+}
+
+.span-all {
+  grid-column: 1 / -1;
+}
+
+.test-panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg-0);
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.test-panel.pass {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
+  color: var(--text-0);
+}
+
+.test-panel.fail {
+  border-color: color-mix(in srgb, var(--down) 40%, var(--border));
+  color: var(--text-0);
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+html.editor,
+html.editor body {
+  overflow: auto;
+}

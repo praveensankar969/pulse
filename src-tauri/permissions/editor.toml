@@ -1,0 +1,35 @@
+[[permission]]
+identifier = "allow-get-settings"
+description = "Read settings so the editor can apply default interval/timeout."
+commands.allow = ["get_settings"]
+
+[[permission]]
+identifier = "allow-save-service"
+description = "Persist a service draft and start the first poll asynchronously."
+commands.allow = ["save_service"]
+
+[[permission]]
+identifier = "allow-test-draft"
+description = "Run Test now against an in-memory draft. Does not persist or reveal secrets."
+commands.allow = ["test_draft"]
+
+[[permission]]
+identifier = "allow-open-editor"
+description = "Create or focus the editor window."
+commands.allow = ["open_editor"]
+
+[[permission]]
+identifier = "allow-close-editor"
+description = "Destroy the editor window after save or cancel."
+commands.allow = ["close_editor"]
+
+[[set]]
+identifier = "allow-editor"
+description = "Add/edit form: save, Test now, settings defaults, list for edit load."
+permissions = [
+    "allow-get-settings",
+    "allow-save-service",
+    "allow-test-draft",
+    "allow-list-services",
+    "allow-close-editor",
+]

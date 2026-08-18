@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { CheckResult, ServiceView } from "./types";
+import type {
+  AppSettings,
+  CheckEvidence,
+  CheckResult,
+  ServiceDraft,
+  ServiceView,
+} from "./types";
 
 export type FocusServicePayload = { id?: string };
 export type PollerDeadPayload = { at: string };
@@ -51,11 +57,35 @@ export async function openSettings(): Promise<void> {
 }
 
 export async function openEditor(id?: string): Promise<void> {
-  await emit("pulse://open-editor", id ? { id } : {});
+  await invoke("open_editor", { id: id ?? null });
+}
+
+export async function closeEditor(): Promise<void> {
+  await invoke("close_editor");
 }
 
 export async function openDetail(id: string): Promise<void> {
   await emit("pulse://open-detail", { id });
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  return invoke<AppSettings>("get_settings");
+}
+
+export async function saveService(draft: ServiceDraft): Promise<ServiceView> {
+  return invoke<ServiceView>("save_service", { draft });
+}
+
+export async function testDraft(draft: ServiceDraft): Promise<CheckEvidence> {
+  return invoke<CheckEvidence>("test_draft", { draft });
+}
+
+export async function onEditorTarget(
+  handler: (payload: { id?: string }) => void,
+): Promise<UnlistenFn> {
+  return listen<{ id?: string }>("pulse://editor-target", (event) => {
+    handler(event.payload);
+  });
 }
 
 export async function onServices(

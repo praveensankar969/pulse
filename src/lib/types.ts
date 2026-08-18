@@ -1,3 +1,6 @@
+/** UI mask. Never persist or send this string as a header value. */
+export const SECRET_MASK = "••••••••";
+
 export type HttpMethod = "GET" | "HEAD" | "POST";
 /** Flap-damped machine state after on_result. Never produced by evaluate(). */
 export type ServiceStatus = "healthy" | "degraded" | "down";
