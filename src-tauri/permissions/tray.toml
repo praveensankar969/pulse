@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-should-suppress-blur"
+description = "Popover blur handler: ignore hide inside the tray suppress window."
+commands.allow = ["should_suppress_blur"]

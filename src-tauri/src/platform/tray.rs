@@ -106,6 +106,7 @@ pub struct ClickProtocol {
 
 impl ClickProtocol {
     pub fn on_down(&mut self, button: ClickButton, now: Instant) {
+        let showing = self.menu_showing(now);
         self.suppress_until = Some(now + Duration::from_millis(SUPPRESS_BLUR_MS));
         match button {
             ClickButton::Right => {
@@ -113,7 +114,8 @@ impl ClickProtocol {
                 self.skip_toggle = false;
             }
             ClickButton::Left => {
-                self.skip_toggle = self.menu_open;
+                // Only the dismiss click inside the prior suppress window skips toggle.
+                self.skip_toggle = showing;
                 self.menu_open = false;
             }
         }
@@ -140,6 +142,10 @@ impl ClickProtocol {
 
     pub fn should_suppress_blur(&self, now: Instant) -> bool {
         self.suppress_until.is_some_and(|until| now < until)
+    }
+
+    fn menu_showing(&self, now: Instant) -> bool {
+        self.menu_open && self.should_suppress_blur(now)
     }
 }
 
@@ -181,21 +187,15 @@ impl TrayHandle {
     }
 
     pub fn set_poller_dead(&self, dead: bool) {
-        let mut inner = self.inner.lock().expect("tray lock");
-        inner.poller_dead = dead;
-        inner.repaint();
+        self.commit_paint(|inner| inner.poller_dead = dead);
     }
 
     pub fn set_offline(&self, offline: bool) {
-        let mut inner = self.inner.lock().expect("tray lock");
-        inner.offline = offline;
-        inner.repaint();
+        self.commit_paint(|inner| inner.offline = offline);
     }
 
     pub fn apply_services(&self, views: &[ServiceView]) {
-        let mut inner = self.inner.lock().expect("tray lock");
-        inner.views = views.to_vec();
-        inner.repaint();
+        self.commit_paint(|inner| inner.views = views.to_vec());
     }
 
     pub fn mark(&self) -> TrayMark {
@@ -211,9 +211,19 @@ impl TrayHandle {
     }
 
     fn bind_icon(&self, apply: Arc<dyn Fn(TrayMark) + Send + Sync>) {
-        let mut inner = self.inner.lock().expect("tray lock");
-        inner.apply_icon = Some(apply);
-        inner.repaint();
+        self.commit_paint(|inner| inner.apply_icon = Some(apply));
+    }
+
+    /// Snapshot mark under the lock, then paint after drop. `set_icon` blocks on main.
+    fn commit_paint(&self, update: impl FnOnce(&mut Inner)) {
+        let (mark, apply) = {
+            let mut inner = self.inner.lock().expect("tray lock");
+            update(&mut inner);
+            (inner.mark(), inner.apply_icon.clone())
+        };
+        if let Some(apply) = apply {
+            apply(mark);
+        }
     }
 
     fn on_down(&self, button: ClickButton) {
@@ -248,12 +258,6 @@ impl Inner {
             offline: self.offline,
             poller_dead: self.poller_dead,
         })
-    }
-
-    fn repaint(&self) {
-        if let Some(apply) = &self.apply_icon {
-            apply(self.mark());
-        }
     }
 }
 
@@ -387,10 +391,11 @@ fn handle_tray_event<R: tauri::Runtime>(
     match button_state {
         MouseButtonState::Down => tray.on_down(click),
         MouseButtonState::Up => {
+            // tray-icon 0.24 drops the whole Click when GetRect fails (overflow).
             let overflow = rect_is_overflow(&rect);
             match tray.on_up(click, overflow) {
-                ClickOutcome::Toggle => apply_visibility(app, &rect, false),
-                ClickOutcome::ShowOnly => apply_visibility(app, &rect, true),
+                ClickOutcome::Toggle => apply_visibility(app, Some(&rect), false),
+                ClickOutcome::ShowOnly => apply_visibility(app, Some(&rect), true),
                 ClickOutcome::None => {}
             }
         }
@@ -404,14 +409,26 @@ fn rect_is_overflow(rect: &tauri::Rect) -> bool {
     }
 }
 
-fn apply_visibility<R: tauri::Runtime>(app: &AppHandle<R>, rect: &tauri::Rect, show_only: bool) {
+/// Show-only + work-area. Not gated on a delivered Click (GetRect-fail / overflow).
+pub fn show_popover_if_hidden<R: tauri::Runtime>(app: &AppHandle<R>) {
+    apply_visibility(app, None, true);
+}
+
+fn apply_visibility<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    rect: Option<&tauri::Rect>,
+    show_only: bool,
+) {
     let Some(window) = app.get_webview_window("popover") else {
         return;
     };
     let visible = window.is_visible().unwrap_or(false);
     if show_only {
         if !visible {
-            place_popover(&window, rect, true);
+            match rect {
+                Some(rect) if !rect_is_overflow(rect) => place_popover(&window, rect),
+                _ => place_work_area_fallback(&window),
+            }
             let _ = window.show();
             let _ = window.set_focus();
         }
@@ -421,16 +438,15 @@ fn apply_visibility<R: tauri::Runtime>(app: &AppHandle<R>, rect: &tauri::Rect, s
         let _ = window.hide();
         return;
     }
-    place_popover(&window, rect, false);
+    match rect {
+        Some(rect) if !rect_is_overflow(rect) => place_popover(&window, rect),
+        _ => place_work_area_fallback(&window),
+    }
     let _ = window.show();
     let _ = window.set_focus();
 }
 
-fn place_popover<R: tauri::Runtime>(window: &WebviewWindow<R>, rect: &tauri::Rect, overflow: bool) {
-    if overflow {
-        place_work_area_fallback(window);
-        return;
-    }
+fn place_popover<R: tauri::Runtime>(window: &WebviewWindow<R>, rect: &tauri::Rect) {
     let Ok(outer) = window.outer_size() else {
         return;
     };
@@ -457,13 +473,12 @@ fn place_work_area_fallback<R: tauri::Runtime>(window: &WebviewWindow<R>) {
         let _ = window.set_position(LogicalPosition::new(12.0, 12.0));
         return;
     };
-    let size = monitor.size();
-    let pos = monitor.position();
+    let area = monitor.work_area();
     let Ok(outer) = window.outer_size() else {
         return;
     };
-    let x = pos.x + size.width as i32 - outer.width as i32 - 12;
-    let y = pos.y + size.height as i32 - outer.height as i32 - 12;
+    let x = area.position.x + area.size.width as i32 - outer.width as i32 - 12;
+    let y = area.position.y + area.size.height as i32 - outer.height as i32 - 12;
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
@@ -869,6 +884,15 @@ mod tests {
     }
 
     #[test]
+    fn dismissed_menu_after_suppress_toggles() {
+        let mut proto = ClickProtocol::default();
+        let t0 = Instant::now();
+        proto.on_down(ClickButton::Right, t0);
+        proto.on_down(ClickButton::Left, t0 + Duration::from_millis(251));
+        assert_eq!(proto.on_up(ClickButton::Left, false), ClickOutcome::Toggle);
+    }
+
+    #[test]
     fn overflow_show_only_does_not_hide() {
         let mut proto = ClickProtocol::default();
         proto.on_down(ClickButton::Left, Instant::now());
@@ -907,5 +931,21 @@ mod tests {
         assert_eq!(tray.mark(), TrayMark::PollerDead);
         hook(false);
         assert_eq!(tray.mark(), TrayMark::Healthy);
+    }
+
+    #[test]
+    fn repaint_drops_lock_before_apply_icon() {
+        let tray = TrayHandle::new();
+        let painted = tray.clone();
+        tray.bind_icon(Arc::new(move |_| {
+            let _ = painted.mark();
+        }));
+        tray.set_poller_dead(true);
+        assert_eq!(tray.mark(), TrayMark::PollerDead);
+        tray.set_poller_dead(false);
+        tray.apply_services(&[view("ok", UiState::Healthy, false, false)]);
+        assert_eq!(tray.mark(), TrayMark::Healthy);
+        tray.set_offline(true);
+        assert_eq!(tray.mark(), TrayMark::Offline);
     }
 }
