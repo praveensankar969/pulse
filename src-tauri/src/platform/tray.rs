@@ -17,6 +17,20 @@ use crate::ipc::AppState;
 pub const SUPPRESS_BLUR_MS: u64 = 250;
 pub const WORK_AREA_INSET: i32 = 12;
 
+/// Click-outside hides the popover. Hover-inside and focus moving to Add
+/// service / detail / settings must not.
+pub fn should_hide_on_blur(suppress: bool, cursor_inside: bool, other_pulse_focused: bool) -> bool {
+    !suppress && !cursor_inside && !other_pulse_focused
+}
+
+fn pulse_utility_focused<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
+    crate::ipc::windows::UTILITY_LABELS.iter().any(|label| {
+        app.get_webview_window(label)
+            .and_then(|window| window.is_focused().ok())
+            .unwrap_or(false)
+    })
+}
+
 const OK: [u8; 3] = [0x36, 0xa1, 0x5a];
 const WARN: [u8; 3] = [0xd4, 0xa0, 0x2a];
 const DANGER: [u8; 3] = [0xe2, 0x4b, 0x3c];
@@ -382,8 +396,12 @@ pub fn install<R: tauri::Runtime>(app: &AppHandle<R>, tray: TrayHandle) -> tauri
         let hide = popover.clone();
         popover.on_window_event(move |event| match event {
             tauri::WindowEvent::Focused(true) => blur_tray.note_popover_focused(),
-            tauri::WindowEvent::Focused(false) if !blur_tray.should_suppress_blur() => {
-                let _ = hide.hide();
+            tauri::WindowEvent::Focused(false) => {
+                let inside = crate::platform::overlay::cursor_inside_window(&hide);
+                let other = pulse_utility_focused(hide.app_handle());
+                if should_hide_on_blur(blur_tray.should_suppress_blur(), inside, other) {
+                    let _ = hide.hide();
+                }
             }
             _ => {}
         });
@@ -1415,6 +1433,14 @@ mod tests {
             size: Size::Physical(tauri::PhysicalSize::new(0, 0)),
         };
         assert!(rect_is_empty(&empty));
+    }
+
+    #[test]
+    fn hover_inside_popover_does_not_hide() {
+        assert!(!should_hide_on_blur(false, true, false));
+        assert!(!should_hide_on_blur(false, false, true));
+        assert!(!should_hide_on_blur(true, false, false));
+        assert!(should_hide_on_blur(false, false, false));
     }
 
     #[test]

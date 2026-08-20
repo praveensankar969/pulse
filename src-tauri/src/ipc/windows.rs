@@ -1,8 +1,8 @@
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const EDITOR_LABEL: &str = "editor";
-const UTILITY_LABELS: &[&str] = &["editor", "detail", "settings"];
+pub(crate) const UTILITY_LABELS: &[&str] = &["editor", "detail", "settings"];
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,16 +21,11 @@ pub fn open_editor(app: &AppHandle, id: Option<String>) -> Result<(), String> {
     };
 
     if let Some(existing) = app.get_webview_window(EDITOR_LABEL) {
-        become_regular(app);
         let _ = existing.set_title(title);
         let _ = existing.emit("pulse://editor-target", &target);
-        let _ = existing.unminimize();
-        let _ = existing.show();
-        let _ = existing.set_focus();
+        present_utility(app, &existing);
         return Ok(());
     }
-
-    become_regular(app);
 
     let mut path = String::from("index.html?surface=editor");
     if let Some(id) = &id {
@@ -38,19 +33,31 @@ pub fn open_editor(app: &AppHandle, id: Option<String>) -> Result<(), String> {
         path.push_str(id);
     }
 
+    // Hidden first so AppKit does not park it on the desktop Space.
     let window = WebviewWindowBuilder::new(app, EDITOR_LABEL, WebviewUrl::App(path.into()))
         .title(title)
         .inner_size(440.0, 640.0)
         .min_inner_size(400.0, 480.0)
         .resizable(true)
-        .visible(true)
+        .visible(false)
         .center()
         .build()
         .map_err(|error| error.to_string())?;
 
     let _ = window.emit("pulse://editor-target", &target);
-    let _ = window.set_focus();
+    present_utility(app, &window);
     Ok(())
+}
+
+/// Show a utility window on the Space the user is on. Stays accessory — becoming
+/// Regular from a fullscreen app switches to an empty desktop.
+pub fn present_utility<R: tauri::Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) {
+    if let Some(popover) = app.get_webview_window("popover") {
+        if window.label() != "popover" {
+            let _ = popover.hide();
+        }
+    }
+    crate::platform::overlay::present_on_active_space(window);
 }
 
 pub fn close_editor(app: &AppHandle) -> Result<(), String> {
@@ -74,7 +81,8 @@ pub fn on_window_event<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tau
     }
 }
 
-/// Accessory apps do not raise utility windows unless we become Regular first.
+/// Used for the notification-permission prompt. Do not use for editor/detail/
+/// settings — that Space-switches out of fullscreen.
 pub fn become_regular<R: tauri::Runtime>(app: &AppHandle<R>) {
     #[cfg(target_os = "macos")]
     {

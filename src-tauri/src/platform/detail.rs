@@ -20,17 +20,9 @@ pub fn parse_detail_id(payload: &str) -> Option<String> {
 }
 
 pub fn open_detail<R: tauri::Runtime>(app: &AppHandle<R>, id: &str) -> Result<(), tauri::Error> {
-    if let Some(popover) = app.get_webview_window("popover") {
-        let _ = popover.hide();
-    }
-
-    crate::ipc::windows::become_regular(app);
-
     if let Some(existing) = app.get_webview_window(DETAIL_LABEL) {
         let _ = existing.emit("pulse://detail-service", DetailId { id: id.to_string() });
-        let _ = existing.unminimize();
-        let _ = existing.show();
-        let _ = existing.set_focus();
+        crate::ipc::windows::present_utility(app, &existing);
         return Ok(());
     }
 
@@ -38,7 +30,7 @@ pub fn open_detail<R: tauri::Runtime>(app: &AppHandle<R>, id: &str) -> Result<()
         "window.__PULSE_DETAIL_ID__={};",
         serde_json::to_string(id).unwrap_or_else(|_| "\"\"".into())
     );
-    WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         app,
         DETAIL_LABEL,
         WebviewUrl::App(format!("index.html?id={id}").into()),
@@ -49,9 +41,10 @@ pub fn open_detail<R: tauri::Runtime>(app: &AppHandle<R>, id: &str) -> Result<()
     .resizable(true)
     .decorations(true)
     .skip_taskbar(false)
-    .visible(true)
+    .visible(false)
     .initialization_script(&init)
     .build()?;
+    crate::ipc::windows::present_utility(app, &window);
     Ok(())
 }
 

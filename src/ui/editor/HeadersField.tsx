@@ -28,14 +28,14 @@ export function HeadersField({ rows, missingKey, onChange }: Props) {
         return (
           <div key={index} className="header-edit-row">
             <input
-              className="mono"
+              className="mono header-key"
               value={row.key}
               placeholder="Authorization"
               aria-label="Header name"
               onChange={(event) => update(index, { key: event.target.value })}
             />
             <input
-              className="mono"
+              className="mono header-value"
               value={row.value}
               placeholder={row.secret ? "secret value" : "value"}
               type={row.secret && masked ? "password" : "text"}

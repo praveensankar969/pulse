@@ -7,15 +7,12 @@ pub const SETTINGS_WIDTH: f64 = 440.0;
 pub const SETTINGS_HEIGHT: f64 = 560.0;
 
 pub fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
-    crate::ipc::windows::become_regular(app);
     if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        crate::ipc::windows::present_utility(app, &window);
         return;
     }
 
-    if let Err(error) = WebviewWindowBuilder::new(
+    match WebviewWindowBuilder::new(
         app,
         SETTINGS_LABEL,
         WebviewUrl::App("index.html?window=settings".into()),
@@ -26,11 +23,12 @@ pub fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
     .resizable(true)
     .maximizable(false)
     .skip_taskbar(false)
-    .visible(true)
-    .focused(true)
+    .visible(false)
+    .focused(false)
     .build()
     {
-        tracing::warn!(%error, "settings window create failed");
+        Ok(window) => crate::ipc::windows::present_utility(app, &window),
+        Err(error) => tracing::warn!(%error, "settings window create failed"),
     }
 }
 

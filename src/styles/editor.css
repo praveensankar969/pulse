@@ -1,5 +1,8 @@
 .editor {
   min-height: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--bg-1);
   color: var(--text-0);
 }
@@ -8,6 +11,8 @@
   display: grid;
   gap: 10px;
   padding: 14px 16px 18px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .editor-title {
@@ -19,6 +24,7 @@
 .field {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .field > span,
@@ -60,8 +66,9 @@
 
 .row-3 {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
+  min-width: 0;
 }
 
 .hint {
@@ -97,15 +104,46 @@
 .assert-edit-row {
   display: grid;
   gap: 6px;
+  min-width: 0;
+  width: 100%;
 }
 
 .header-edit-row {
-  grid-template-columns: 1fr 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "key secret remove"
+    "value value value";
   align-items: center;
 }
 
+.header-edit-row .header-key {
+  grid-area: key;
+}
+
+.header-edit-row .header-value {
+  grid-area: value;
+}
+
+.header-edit-row .check-row {
+  grid-area: secret;
+}
+
+.header-edit-row > .text-btn {
+  grid-area: remove;
+}
+
+.header-edit-row input,
+.assert-edit-row input,
+.assert-edit-row select,
+.field input,
+.field select,
+.field textarea {
+  min-width: 0;
+  width: 100%;
+}
+
 .assert-edit-row {
-  grid-template-columns: 1fr 110px 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 110px) minmax(0, 1fr) auto;
   align-items: center;
 }
 
@@ -140,6 +178,9 @@
 }
 
 html.editor,
-html.editor body {
-  overflow: auto;
+html.editor body,
+html.editor #root {
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-width: 100%;
 }
