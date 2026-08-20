@@ -1,6 +1,6 @@
 pub mod domain;
-pub mod ipc;
 pub mod eval;
+pub mod ipc;
 pub mod launch;
 pub mod logging;
 pub mod notify;
@@ -26,27 +26,13 @@ pub fn run() {
 
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            handle_activation(app, &args);
-        }));
         builder = builder
-            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-                if let Some(window) = app.get_webview_window("popover") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+            .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+                handle_activation(app, &args);
             }))
             .plugin(tauri_plugin_autostart::Builder::new().build())
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             .plugin(tauri_plugin_dialog::init());
-    }
-
-    // Plumbing only: never check or install on launch. Off unless `--features updater`.
-    #[cfg(all(desktop, feature = "updater"))]
-    {
-        builder = builder
-            .plugin(tauri_plugin_process::init())
-            .plugin(tauri_plugin_updater::Builder::new().build());
     }
 
     builder
@@ -89,6 +75,10 @@ pub fn run() {
                 on_poller_dead: tray.poller_dead_hook(),
             })?;
             let handle = scheduler.handle();
+            tray.apply_services(&handle.views());
+            if handle.poller_dead() {
+                tray.set_poller_dead(true);
+            }
             let wake = crate::platform::wake::listen({
                 let handle = handle.clone();
                 move |event| match event {
@@ -97,10 +87,6 @@ pub fn run() {
                 }
             });
             app.manage(wake);
-            tray.apply_services(&handle.views());
-            if handle.poller_dead() {
-                tray.set_poller_dead(true);
-            }
             tauri::async_runtime::spawn(async move {
                 scheduler.run().await;
             });
@@ -127,19 +113,14 @@ pub fn run() {
             ipc::commands::reveal_secret,
             ipc::commands::end_reveal,
             ipc::commands::list_services,
-            ipc::commands::get_settings,
             ipc::commands::save_service,
             ipc::commands::test_draft,
             ipc::commands::open_editor,
             ipc::commands::close_editor,
-            ipc::commands::save_service,
             ipc::commands::set_paused,
             ipc::commands::check_now,
             ipc::commands::check_all,
             ipc::commands::delete_service,
-            ipc::commands::poller_dead,
-            ipc::commands::quit,
-            ipc::commands::open_action,
             ipc::commands::get_detail,
             ipc::commands::get_settings,
             ipc::commands::update_settings,
@@ -147,9 +128,8 @@ pub fn run() {
             ipc::commands::snooze,
             ipc::commands::open_action,
             ipc::commands::open_detail,
-            ipc::commands::get_settings,
-            ipc::commands::update_settings,
-            ipc::commands::open_settings,
+            ipc::commands::poller_dead,
+            ipc::commands::quit,
             ipc::commands::maybe_ask_launch_at_login,
             ipc::commands::pending_launch_prompt,
             ipc::commands::answer_launch_prompt,

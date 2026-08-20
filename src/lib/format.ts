@@ -1,4 +1,3 @@
-import type { ServiceView, UiState } from "./types";
 import type {
   AssertOp,
   CheckResult,
@@ -27,6 +26,9 @@ export type LabelTone =
   | "paused"
   | "healthy";
 
+export type SparkPoint = ServiceStatus | "gap";
+
+const HIDDEN_ERRORS: ErrorKind[] = ["canceled", "offline"];
 export type StripTone = "down" | "warn" | "ok" | "neutral";
 
 const BAND: Record<UiState, number> = {
@@ -36,9 +38,6 @@ const BAND: Record<UiState, number> = {
   paused: 3,
   healthy: 4,
 };
-export type SparkPoint = ServiceStatus | "gap";
-
-const HIDDEN_ERRORS: ErrorKind[] = ["canceled", "offline"];
 
 export function isSlow(view: ServiceView): boolean {
   if (view.state !== "degraded") return false;
@@ -110,9 +109,9 @@ export function formatAbsolute(iso: string): string {
 
 export function formatCompactDuration(ms: number): string {
   const n = Math.max(0, ms);
-  if (n < 60_000) return `${Math.floor(n / 1000)}s`;
-  if (n < 3_600_000) return `${Math.round(n / 60_000)}m`;
-  return `${Math.round(n / 3_600_000)}h`;
+  if (n < 60_000) return `${String(Math.floor(n / 1000)).padStart(2, "0")}s`;
+  if (n < 3_600_000) return `${String(Math.round(n / 60_000)).padStart(2, "0")}m`;
+  return `${String(Math.round(n / 3_600_000)).padStart(2, "0")}h`;
 }
 
 export function formatRelative(iso: string | undefined, now: number): string {
@@ -177,9 +176,6 @@ export function relativeTime(
   }
   if (!view.lastCheckAt) return "";
   const at = Date.parse(view.lastCheckAt);
-export function formatRelative(iso: string | undefined, now: number): string {
-  if (!iso) return "";
-  const at = Date.parse(iso);
   if (Number.isNaN(at)) return "";
   return `${formatCompactDuration(Math.max(0, now - at))} ago`;
 }
@@ -194,54 +190,6 @@ export function snoozeRemaining(
   return `Snoozed · ${formatCompactDuration(at - now)}`;
 }
 
-export function summary(views: ServiceView[]): {
-  countText: string;
-  stripText: string;
-  stripTone: StripTone;
-} {
-  if (views.length === 0) {
-    return {
-      countText: "No services",
-      stripText: "Add a check to start watching.",
-      stripTone: "neutral",
-    };
-  }
-
-  const noun = views.length === 1 ? "service" : "services";
-  const active = views.filter((view) => !view.paused && view.state !== "paused");
-  const downs = active.filter((view) => view.state === "down");
-  const degraded = active.filter((view) => view.state === "degraded");
-
-  const countText = downs.length
-    ? `${views.length} ${noun} · ${downs.length} down`
-    : `${views.length} ${noun}`;
-
-  if (downs.length) {
-    return {
-      countText,
-      stripText: `${downs.length} down · ${downs.map((view) => view.name).join(", ")}`,
-      stripTone: "down",
-    };
-  }
-
-  if (degraded.length) {
-    const slow = degraded.filter(isSlow);
-    const kind = slow.length === degraded.length ? "slow" : "degraded";
-    const named = kind === "slow" ? slow : degraded;
-    return {
-      countText,
-      stripText: `${named.length} ${kind} · ${named.map((view) => view.name).join(", ")}`,
-      stripTone: "warn",
-    };
-  }
-
-  if (active.length === 0) {
-    return { countText, stripText: "All paused", stripTone: "neutral" };
-  }
-  if (active.every((view) => view.state === "pending")) {
-    return { countText, stripText: "Checking…", stripTone: "neutral" };
-  }
-  return { countText, stripText: "All healthy", stripTone: "ok" };
 export function tomorrowEightLocal(now = new Date()): string {
   const next = new Date(now);
   next.setDate(next.getDate() + 1);

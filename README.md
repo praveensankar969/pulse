@@ -99,27 +99,36 @@ Match these before tagging. Plus the extras at the bottom.
 
 ## Platforms
 
-macOS and Windows only. Linux is out of scope.
+macOS, Apple silicon. Linux is out of scope.
+
+## Site
+
+The public site is `docs/` (GitHub Pages). Enable **Settings → Pages → Source: GitHub Actions**. Pushes that touch `docs/` deploy it.
+
+If the GitHub repo is not `pulsebar/pulse`, edit `meta[name=pulse-github]` in `docs/index.html`.
 
 ## Install
 
-Distribution is **direct download only** from [GitHub Releases](https://github.com/pulsebar/pulse/releases): notarized macOS `.dmg` and Windows NSIS `.exe`. There is no Mac App Store or Microsoft Store package.
+Direct download from GitHub Releases. Unsigned Mac build (no Developer ID).
 
-Push a `v*` tag to run [`.github/workflows/release.yml`](.github/workflows/release.yml). That workflow builds macOS (Apple Silicon + Intel) and Windows, uploads the installers to a draft release, and publishes it only after every platform job succeeds. `latest.json` is written only when `TAURI_SIGNING_PRIVATE_KEY` is set (tauri-action skips it without `.sig` files). The default binary does **not** enable the updater. The Windows NSIS wizard and Apps & Features entry are titled **Pulse — Service Monitor**; `Pulse.app` / `Pulse.exe` stay `productName` Pulse.
+### Publish a version
 
-### Unsigned macOS (right-click → Open)
+1. `pnpm tauri build --bundles app`
+2. Zip `src-tauri/target/release/bundle/macos/Pulse.app` as **`Pulse.app.zip`**
+3. `git tag v0.1.0 && git push origin v0.1.0` — Actions opens the GitHub Release
+4. Attach `Pulse.app.zip` to that release
 
-Until a Developer ID certificate and notarization secrets are configured, Gatekeeper will block a double-click:
+The site Download button uses the latest zip on the latest release.
 
-1. In Finder, right-click (or Control-click) `Pulse.app`.
-2. Choose **Open**.
-3. Confirm **Open** in the dialog.
+### Unsigned Mac (right-click → Open)
 
-Do not use `xattr -cr` as the everyday path; right-click → Open is the documented Gatekeeper bypass for an unsigned first install.
+Gatekeeper blocks a double-click:
 
-### Unsigned Windows / SmartScreen
+1. Unzip, then right-click (Control-click) `Pulse.app`
+2. Choose **Open**
+3. Confirm **Open**
 
-Without Authenticode, SmartScreen will warn that the NSIS installer is unrecognized. Choose **More info** → **Run anyway**. Win10 machines without WebView2 will download it via the embedded bootstrapper on first launch (needs network once).
+Do not use `xattr -cr` as the everyday path.
 
 ### Keychain: Always Allow
 
@@ -133,10 +142,7 @@ macOS Keychain ACLs are bound to the code-signing identity. An unsigned `dev.pul
 
 Identifier `dev.pulsebar.app`. Files sit **directly** in that directory (no extra `config` leaf):
 
-| OS | Path |
-|---|---|
-| macOS | `~/Library/Application Support/dev.pulsebar.app/` |
-| Windows | `%APPDATA%\dev.pulsebar.app\` |
+macOS: `~/Library/Application Support/dev.pulsebar.app/`
 
 Typical files: `config.json`, `services.json`, `history.sqlite3`, `logs/pulse.log`.
 
@@ -152,7 +158,7 @@ Settings → “Check for updates” is not built yet (no Settings window).
 
 ### Icons
 
-App icons are a simple filled circle (not emoji). Tray status marks (green / amber / red / hollow / slash) are a later change and are not these bundle icons.
+App icon is the dual rounded square on a light plate (same mark as the landing favicon). Tray status marks use that glyph in green / amber / red / hollow / slash so health is readable from the menu extra without opening the popover.
 ## Notifications
 
 OS toasts fire once on down and once on recovery. Sound is best-effort (`settings.sound`). Permission is requested on the first successful save of a service with `notify: true`, not at launch. Toasts are Rust-only (`OsNotifier`); webviews do not get `notification:default`.

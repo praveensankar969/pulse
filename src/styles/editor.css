@@ -12,7 +12,8 @@
 
 .editor-title {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.015em;
 }
 
 .field {
@@ -33,10 +34,10 @@
 .assert-edit-row input,
 .assert-edit-row select {
   background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
+  border: 1px solid var(--text-0);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
 }
 
 .field input:focus,
@@ -45,9 +46,8 @@
 .header-edit-row input:focus,
 .assert-edit-row input:focus,
 .assert-edit-row select:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-  border-color: transparent;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .mono,
@@ -89,7 +89,7 @@
 }
 
 .check-row input {
-  accent-color: var(--accent);
+  accent-color: var(--ok);
 }
 
 .headers-edit,
@@ -114,8 +114,8 @@
 }
 
 .test-panel {
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 0.5px solid var(--hair);
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   background: var(--bg-0);
   font-size: 12px;

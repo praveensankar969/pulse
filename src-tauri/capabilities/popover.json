@@ -2,22 +2,17 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "popover",
   "description": "Glance list. No secret-reveal commands.",
-  "windows": ["popover"],
+  "windows": [
+    "popover"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-hide",
     "allow-scheduler",
-    "allow-open-editor",
-    "allow-should-suppress-blur"
-    "allow-scheduler",
     "allow-should-suppress-blur",
-    "allow-open-detail"
-    "allow-scheduler",
-    "allow-should-suppress-blur",
-    "notification:default"
-    "allow-should-suppress-blur",
+    "allow-open-detail",
     "allow-get-settings",
-    "allow-open-settings"
+    "allow-open-settings",
+    "allow-open-editor"
   ]
-  "permissions": ["core:default", "allow-scheduler", "allow-should-suppress-blur"]
 }

@@ -6,39 +6,15 @@ import { DetailWindow } from "./ui/detail/DetailWindow";
 import { EditorWindow } from "./ui/editor/EditorWindow";
 import { Popover } from "./ui/popover/Popover";
 import { SettingsWindow } from "./ui/settings/SettingsWindow";
-import "./styles/tokens.css";
-import "./styles/reset.css";
-import "./styles/popover.css";
-import "./styles/editor.css";
-
-function surface(): "popover" | "editor" {
-  try {
-    if (getCurrentWindow().label === "editor") return "editor";
-  } catch {
-    // Vite-only / tests.
-  }
-  return new URLSearchParams(window.location.search).get("surface") === "editor"
-    ? "editor"
-    : "popover";
-}
-
-const kind = surface();
-document.documentElement.classList.add(kind);
-if (kind === "popover") {
-  void startStore();
-}
-
-createRoot(document.getElementById("root") as HTMLElement).render(
-  <StrictMode>{kind === "editor" ? <EditorWindow /> : <Popover />}</StrictMode>,
-import { DetailWindow } from "./ui/detail/DetailWindow";
-import { PopoverWindow } from "./ui/popover/PopoverWindow";
-import { SettingsWindow } from "./ui/settings/SettingsWindow";
+import { applyTheme } from "./lib/theme";
 import "./styles/tokens.css";
 import "./styles/reset.css";
 import "./styles/popover.css";
 import "./styles/detail.css";
 import "./styles/editor.css";
 import "./styles/settings.css";
+
+applyTheme();
 
 function surface(): "popover" | "editor" | "detail" | "settings" {
   try {
@@ -57,28 +33,6 @@ function surface(): "popover" | "editor" | "detail" | "settings" {
 }
 
 const kind = surface();
-
-createRoot(document.getElementById("root") as HTMLElement).render(
-  <StrictMode>
-    {kind === "detail" ? (
-      <DetailWindow />
-    ) : kind === "settings" ? (
-      <SettingsWindow />
-    ) : (
-      <PopoverWindow />
-    )}
-import "./styles/settings.css";
-
-function windowLabel(): string {
-  try {
-    return getCurrentWindow().label;
-  } catch {
-    return "popover";
-  }
-}
-
-const label = windowLabel();
-if (label !== "settings") {
 document.documentElement.classList.add(kind);
 if (kind === "popover") {
   void startStore();
@@ -86,7 +40,6 @@ if (kind === "popover") {
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    {label === "settings" ? <SettingsWindow /> : <Popover />}
     {kind === "editor" ? (
       <EditorWindow />
     ) : kind === "detail" ? (

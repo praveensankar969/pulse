@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "popover",
@@ -18,11 +19,17 @@
         "height": 480,
         "decorations": false,
         "resizable": false,
+        "transparent": true,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "skipTaskbar": true,
         "visible": false,
         "center": true,
-        "shadow": true
+        "shadow": true,
+        "windowEffects": {
+          "effects": ["popover"],
+          "radius": 12
+        }
       }
     ],
     "security": {
@@ -31,7 +38,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "nsis"],
+    "targets": ["app"],
     "createUpdaterArtifacts": false,
     "publisher": "Pulse",
     "homepage": "https://github.com/pulsebar/pulse",

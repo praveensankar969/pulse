@@ -1,0 +1,1423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pulse</title>
+  <meta name="pulse-github" content="pulsebar/pulse" />
+  <meta name="description" content="Local menu-bar health monitor for HTTP endpoints you own. macOS, Apple silicon, nothing leaves the machine." />
+  <link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='10' width='12' height='12' rx='2.4' fill='%2336a15a'/%3E%3Crect x='16' y='10' width='12' height='12' rx='2.4' fill='%2336a15a' opacity='.38'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:      oklch(12% 0.012 250);
+      --surface: oklch(18% 0.014 250);
+      --fg:      oklch(96% 0.01 250);
+      --muted:   oklch(70% 0.02 250);
+      --border:  oklch(28% 0.016 250);
+      --accent:  oklch(58% 0.16 145);
+
+      --font-display: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      --font-ui: "IBM Plex Sans", "Helvetica Neue", Helvetica, sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+      --font-os: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+
+      --status-ok:   var(--accent);
+      --status-warn: oklch(70% 0.13 85);
+      --status-down: oklch(58% 0.19 25);
+
+      --mac-ink: #1d1d1f;
+      --mac-sec: #6e6e73;
+      --mac-hair: rgba(60, 60, 67, 0.12);
+      --mac-hover: rgba(0, 0, 0, 0.045);
+      --mac-blue: #007aff;
+      --bar-h: 32px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-ui);
+      font-size: 15px;
+      line-height: 1.5;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: clip;
+    }
+    img, svg { display: block; max-width: 100%; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    p { text-wrap: pretty; margin: 0; }
+
+    .void-glow {
+      position: fixed;
+      top: -80px;
+      right: 36px;
+      width: 480px;
+      height: 340px;
+      background: radial-gradient(ellipse at 50% 40%, oklch(42% 0.04 230 / 0.22), transparent 68%);
+      animation: crawl 30s ease-in-out infinite alternate;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes crawl {
+      from { transform: translate3d(-28px, 6px, 0) scale(1); }
+      to   { transform: translate3d(40px, 22px, 0) scale(1.05); }
+    }
+
+    .menubar {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 40;
+      height: var(--bar-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 0 12px;
+      color: var(--fg);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: -0.012em;
+      background: color-mix(in oklch, var(--surface) 72%, transparent);
+      backdrop-filter: blur(28px) saturate(160%);
+      -webkit-backdrop-filter: blur(28px) saturate(160%);
+      border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+      user-select: none;
+      animation: bar-draw 400ms ease both;
+    }
+    @keyframes bar-draw {
+      from { clip-path: inset(0 100% 0 0); }
+      to   { clip-path: inset(0 0 0 0); }
+    }
+    .mb-left, .mb-right {
+      display: flex;
+      align-items: center;
+      height: 100%;
+      min-width: 0;
+    }
+    .apple {
+      width: 12px; height: 14px;
+      margin-right: 10px;
+      opacity: 0.88;
+      flex: 0 0 auto;
+    }
+    .wordmark {
+      display: inline-flex;
+      align-items: center;
+      color: var(--fg);
+      letter-spacing: -0.02em;
+      margin-right: 4px;
+    }
+    .logo-glyph, .pulse-glyph {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      position: relative;
+      flex: 0 0 auto;
+      margin-right: 7px;
+    }
+    .logo-glyph {
+      background: var(--fg);
+      box-shadow: 5px 0 0 color-mix(in oklch, var(--fg) 34%, transparent);
+    }
+    .mb-dl {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--fg);
+      min-height: 44px;
+      padding: 0 14px;
+      position: relative;
+      font-size: 13px;
+      font-weight: 400;
+    }
+    .mb-dl:hover { background: color-mix(in oklch, var(--fg) 8%, transparent); }
+    .mb-dl:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+    .mb-item {
+      display: inline-flex;
+      align-items: center;
+      height: 100%;
+      padding: 0 7px;
+      color: var(--fg);
+      opacity: 0.88;
+    }
+    .mb-ico { width: 14px; height: 14px; }
+    .mb-batt { gap: 4px; font-variant-numeric: tabular-nums; font-size: 12px; }
+    .mb-clock {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      min-width: 108px;
+      justify-content: flex-end;
+      padding-right: 2px;
+      color: var(--fg);
+    }
+
+    .pulse-hit {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      height: 22px;
+      min-width: 26px;
+      padding: 0 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      position: relative;
+    }
+    .pulse-hit:hover { background: color-mix(in oklch, var(--fg) 10%, transparent); }
+    .pulse-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .pulse-hit[aria-expanded="true"] { background: color-mix(in oklch, var(--fg) 12%, transparent); }
+    .pulse-glyph {
+      background: var(--status-ok);
+      box-shadow: 5px 0 0 color-mix(in oklch, var(--status-ok) 38%, transparent);
+      transition: background 0.25s ease, box-shadow 0.25s ease;
+    }
+    body[data-icon="degraded"] .pulse-glyph {
+      background: var(--status-warn);
+      box-shadow: 5px 0 0 color-mix(in oklch, var(--status-warn) 40%, transparent);
+    }
+    body[data-icon="down"] .pulse-glyph {
+      background: var(--status-down);
+      box-shadow: 5px 0 0 color-mix(in oklch, var(--status-down) 40%, transparent);
+    }
+    body[data-icon="paused"] .pulse-glyph {
+      background: transparent;
+      box-shadow:
+        inset 0 0 0 1.4px color-mix(in oklch, var(--fg) 45%, transparent),
+        5px 0 0 color-mix(in oklch, var(--fg) 18%, transparent);
+    }
+    .badge {
+      position: absolute;
+      top: -1px; right: 0;
+      min-width: 12px; height: 12px;
+      padding: 0 3px;
+      border-radius: 99px;
+      background: var(--status-down);
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 8px;
+      line-height: 12px;
+      text-align: center;
+      display: none;
+      font-weight: 600;
+      box-shadow: 0 0 0 1.5px var(--bg);
+    }
+    body[data-icon="down"] .badge { display: block; }
+
+    .os-note {
+      position: fixed;
+      top: 44px;
+      right: min(400px, 42vw);
+      z-index: 36;
+      width: min(328px, calc(100vw - 32px));
+      display: none;
+      grid-template-columns: 38px 1fr auto;
+      gap: 10px;
+      padding: 10px 12px 12px;
+      border-radius: 18px;
+      background: rgba(246, 246, 248, 0.9);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      border: 0.5px solid rgba(255,255,255,0.7);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.28);
+      cursor: pointer;
+      text-align: left;
+      color: var(--mac-ink);
+      appearance: none;
+      font-family: var(--font-os);
+    }
+    .os-note.show {
+      display: grid;
+      animation: banner-in 180ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    @keyframes banner-in {
+      from { opacity: 0; transform: translateY(-12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .os-app { font-size: 10px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mac-sec); }
+    .os-title { font-size: 13px; font-weight: 650; margin-top: 1px; letter-spacing: -0.01em; }
+    .os-body { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--mac-sec); margin-top: 2px; }
+    .os-time { font-size: 11px; color: var(--mac-sec); }
+    .os-mark {
+      width: 36px; height: 36px; border-radius: 9px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+    }
+    .os-mark img, .pop-appico img { width: 100%; height: 100%; object-fit: cover; }
+    .os-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .popover {
+      position: fixed;
+      top: 36px;
+      right: 12px;
+      width: min(372px, calc(100vw - 24px));
+      z-index: 38;
+      background: rgba(246, 246, 248, 0.88);
+      backdrop-filter: blur(40px) saturate(190%);
+      -webkit-backdrop-filter: blur(40px) saturate(190%);
+      color: var(--mac-ink);
+      border: 0.5px solid rgba(255,255,255,0.7);
+      border-radius: 12px;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.32), 0 0 0 0.5px rgba(0,0,0,0.12);
+      overflow: visible;
+      display: none;
+      flex-direction: column;
+      max-height: min(560px, calc(100vh - 48px));
+      font-family: var(--font-os);
+      transform-origin: calc(100% - 72px) 0;
+    }
+    .popover.open {
+      display: flex;
+      animation: pop-in 180ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    @keyframes pop-in {
+      from { opacity: 0; transform: scale(0.92) translateY(-6px); }
+      to   { opacity: 1; transform: none; }
+    }
+    .popover::before {
+      content: "";
+      position: absolute;
+      top: -5px; right: 68px;
+      width: 10px; height: 10px;
+      background: inherit;
+      border-left: 0.5px solid rgba(255,255,255,0.7);
+      border-top: 0.5px solid rgba(255,255,255,0.7);
+      transform: rotate(45deg);
+    }
+    .pop-inner {
+      overflow: hidden;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      max-height: inherit;
+    }
+    .pop-head {
+      padding: 12px 14px 11px;
+      border-bottom: 0.5px solid var(--mac-hair);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .pop-brand { display: flex; gap: 10px; align-items: center; min-width: 0; }
+    .pop-appico {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+      flex: 0 0 auto;
+    }
+    .pop-title { font-size: 13px; font-weight: 650; letter-spacing: -0.015em; }
+    .pop-sum { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--mac-sec); margin: 2px 0 0; }
+    .svc-list { overflow: auto; background: rgba(255,255,255,0.28); }
+    .svc { border-bottom: 0.5px solid var(--mac-hair); }
+    .svc-row {
+      width: 100%;
+      appearance: none; border: 0; background: transparent;
+      display: grid;
+      grid-template-columns: 14px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 9px 14px;
+      text-align: left;
+      color: var(--mac-ink);
+      min-height: 44px;
+    }
+    .svc[aria-selected="true"] .svc-row,
+    .svc-row:hover { background: var(--mac-hover); }
+    .svc-row:focus-visible { outline: 2px solid var(--mac-blue); outline-offset: -2px; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 99px;
+      background: var(--status-ok);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--status-ok) 18%, transparent);
+    }
+    .dot.warn {
+      background: var(--status-warn);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--status-warn) 18%, transparent);
+    }
+    .dot.down {
+      background: var(--status-down);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--status-down) 18%, transparent);
+    }
+    .dot.mute { background: #c7c7cc; box-shadow: none; }
+    .svc-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+    .svc-meta, .svc-age {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 11px; color: var(--mac-sec);
+    }
+    .svc-right { display: flex; align-items: center; justify-content: flex-end; min-width: 92px; }
+    .svc-hover { display: none; gap: 4px; }
+    .svc-row:hover .svc-static, .svc-row:focus-visible .svc-static { display: none; }
+    .svc-row:hover .svc-hover, .svc-row:focus-visible .svc-hover { display: flex; }
+    .ghost-mini, .mini {
+      appearance: none; border: 0;
+      background: rgba(0,0,0,0.06);
+      color: var(--mac-ink);
+      border-radius: 7px;
+      font-size: 11px; font-weight: 600;
+      padding: 5px 8px;
+      font-family: var(--font-os);
+    }
+    .ghost-mini:hover, .mini:hover { background: rgba(0,0,0,0.12); }
+    .mini.primary { background: var(--mac-ink); color: #fff; }
+    .mini.primary:hover { background: #000; color: #fff; }
+    .ghost-mini:focus-visible, .mini:focus-visible { outline: 2px solid var(--mac-blue); outline-offset: 1px; }
+    .spill {
+      display: inline-flex; align-items: center;
+      font-size: 10px; font-weight: 650;
+      letter-spacing: 0.02em;
+      padding: 2px 7px; border-radius: 99px;
+    }
+    .spill-ok   { background: color-mix(in oklch, var(--status-ok) 18%, #fff); color: #0d6a32; }
+    .spill-warn { background: color-mix(in oklch, var(--status-warn) 22%, #fff); color: #8a5a00; }
+    .spill-down { background: color-mix(in oklch, var(--status-down) 18%, #fff); color: #9b1c1c; }
+    .spill-mute { background: #ececee; color: #6e6e73; }
+    .svc-detail {
+      padding: 0 14px 12px 36px;
+      display: grid; gap: 6px;
+    }
+    .ev {
+      display: flex; justify-content: space-between; gap: 12px;
+      font-size: 11px; color: var(--mac-sec);
+    }
+    .ev b { font-weight: 550; color: var(--mac-ink); font-family: ui-monospace, Menlo, monospace; }
+    .spark { width: 100%; height: 28px; color: var(--mac-ink); margin-top: 4px; }
+    .spark-cap { font-size: 10px; color: var(--mac-sec); }
+    .svc-actions { display: flex; flex-wrap: wrap; gap: 6px; position: relative; margin-top: 4px; }
+    .snooze-menu {
+      display: none; position: absolute; left: 0; top: 100%;
+      margin-top: 4px; z-index: 2;
+      background: #fff; border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      overflow: hidden; min-width: 148px;
+    }
+    .snooze-menu.open { display: flex; flex-direction: column; }
+    .snooze-menu button {
+      appearance: none; border: 0; background: #fff; color: var(--mac-ink);
+      text-align: left; padding: 8px 10px; font-size: 12px;
+    }
+    .snooze-menu button:hover { background: #f2f2f4; }
+    .pop-foot {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 8px 10px;
+      border-top: 0.5px solid var(--mac-hair);
+      background: rgba(255,255,255,0.35);
+    }
+    .pop-foot-l, .pop-foot-r { display: flex; gap: 4px; }
+    .more-wrap { position: relative; }
+    .more-menu {
+      display: none; position: absolute; right: 0; bottom: 34px;
+      background: #fff; border-radius: 8px; min-width: 120px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18); overflow: hidden;
+    }
+    .more-menu.open { display: flex; flex-direction: column; }
+    .more-menu button {
+      appearance: none; border: 0; background: #fff; color: var(--mac-ink);
+      text-align: left; padding: 8px 10px; font-size: 12px;
+    }
+    .more-menu button:hover { background: #f2f2f4; }
+
+    .util-win {
+      position: fixed;
+      top: 72px;
+      left: 24px;
+      width: min(360px, calc(100vw - 32px));
+      z-index: 34;
+      display: none;
+      background: rgba(246, 246, 248, 0.94);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      color: var(--mac-ink);
+      border: 0.5px solid rgba(255,255,255,0.7);
+      border-radius: 12px;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.28);
+      font-family: var(--font-os);
+      overflow: hidden;
+    }
+    .util-win.open { display: block; }
+    .util-win.settings { left: 52px; top: 88px; }
+    .win-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px 8px;
+      border-bottom: 0.5px solid var(--mac-hair);
+      font-size: 12px; font-weight: 650;
+    }
+    .win-dots { display: flex; gap: 6px; }
+    .win-dots i { width: 10px; height: 10px; border-radius: 99px; background: #ddd; }
+    .win-body { padding: 12px 14px 14px; display: grid; gap: 10px; }
+    .field { display: grid; gap: 4px; }
+    .field label { font-size: 11px; color: var(--mac-sec); font-weight: 550; }
+    .field input, .field select, .field textarea {
+      border: 1px solid #1d1d1f;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: 13px var(--font-os);
+      color: var(--mac-ink);
+      background: #fff;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: 2px solid var(--mac-blue); outline-offset: 1px;
+    }
+    .seg { display: flex; gap: 4px; }
+    .seg button {
+      appearance: none; border: 0; background: #efefef; color: var(--mac-ink);
+      border-radius: 99px; padding: 6px 10px; font-size: 12px; font-weight: 600;
+    }
+    .seg button.on { background: #1d1d1f; color: #fff; }
+    .seg button:focus-visible { outline: 2px solid var(--mac-blue); }
+    .win-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+    .switch {
+      width: 36px; height: 22px; border-radius: 99px; border: 0;
+      background: #1d1d1f; position: relative;
+    }
+    .switch.off { background: #d1d1d6; }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 16px;
+      width: 18px; height: 18px; border-radius: 99px; background: #fff;
+    }
+    .switch.off::after { left: 2px; }
+    .set-row {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; font-size: 13px;
+    }
+
+    .g-win {
+      position: fixed;
+      top: 120px;
+      left: 24px;
+      width: min(420px, calc(100vw - 32px));
+      z-index: 33;
+      display: none;
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    .g-win.open { display: block; }
+    .g-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px; font-weight: 500;
+    }
+    .g-bar button {
+      appearance: none; border: 0; background: transparent; color: var(--muted);
+      min-height: 32px; padding: 0 8px;
+    }
+    .g-bar button:hover { color: var(--fg); }
+    .g-bar button:focus-visible { outline: 2px solid var(--accent); }
+    .g-body { padding: 12px; }
+    .g-chart { width: 100%; height: 88px; color: var(--status-down); }
+    body[data-icon="healthy"] .g-chart { color: var(--accent); }
+    .g-cap { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+    .void {
+      position: relative;
+      z-index: 1;
+      min-height: 160vh;
+      padding: 48px 24px 72px;
+      display: flex;
+      align-items: flex-end;
+    }
+    .instruments {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      width: min(760px, 100%);
+      opacity: 0;
+      pointer-events: none;
+    }
+    body[data-objects="1"] .instruments {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .inst {
+      flex: 1 1 210px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 14px 13px;
+      min-height: 92px;
+      opacity: 0;
+    }
+    body[data-objects="1"] .inst:nth-child(1) { animation: obj-in 400ms ease 0ms both; }
+    body[data-objects="1"] .inst:nth-child(2) { animation: obj-in 400ms ease 180ms both; }
+    body[data-objects="1"] .inst:nth-child(3) { animation: obj-in 400ms ease 360ms both; }
+    @keyframes obj-in {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: none; }
+    }
+    .inst-k {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .inst-v {
+      margin-top: 8px;
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: var(--accent);
+    }
+    .inst-v.strike {
+      color: var(--status-down);
+      text-decoration: line-through;
+      text-decoration-thickness: 1.5px;
+    }
+    .secret-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 12px; margin-top: 8px;
+    }
+    .secret-val { font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.12em; }
+    .never { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .stops { display: flex; align-items: flex-end; gap: 6px; height: 28px; margin: 10px 0 12px; }
+    .stops i {
+      display: block; width: 8px; border-radius: 2px;
+      background: var(--accent); height: 10px;
+    }
+    .stops i:nth-child(2) { height: 14px; }
+    .stops i:nth-child(3) { height: 18px; }
+    .stops i:nth-child(4) { height: 22px; }
+    .stops[data-state="down"] i:nth-child(3) { background: var(--status-warn); height: 20px; }
+    .stops[data-state="down"] i:nth-child(4) { background: var(--status-down); height: 26px; }
+    .check-now {
+      appearance: none; border: 0;
+      background: var(--fg); color: var(--bg);
+      border-radius: 8px;
+      min-height: 36px; padding: 0 12px;
+      font-size: 13px; font-weight: 500;
+    }
+    .check-now:hover { background: oklch(90% 0.01 250); color: var(--bg); }
+    .check-now:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .endband {
+      position: relative;
+      z-index: 1;
+      padding: 96px 24px 48px;
+      text-align: center;
+    }
+    .endband h1 {
+      font-family: var(--font-display);
+      font-size: clamp(32px, 5vw, 52px);
+      font-weight: 500;
+      line-height: 1.18;
+      letter-spacing: -0.02em;
+      max-width: 16ch;
+      margin: 0 auto;
+      text-wrap: balance;
+    }
+    .sys {
+      margin-top: 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .btn-solid {
+      appearance: none; border: 0;
+      margin-top: 28px;
+      background: var(--accent);
+      color: oklch(14% 0.02 145);
+      min-height: 44px;
+      padding: 0 22px;
+      border-radius: 999px;
+      font-size: 15px;
+      font-weight: 500;
+    }
+    .btn-solid:hover {
+      background: oklch(50% 0.15 145);
+      color: oklch(14% 0.02 145);
+    }
+    .btn-solid:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+
+    .pagefoot {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px 24px;
+      padding: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pagefoot b { color: var(--fg); font-weight: 500; }
+
+    .sheet-back {
+      position: fixed; inset: 0; z-index: 50;
+      background: oklch(8% 0.012 250 / 0.62);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .sheet-back.open { display: flex; }
+    .sheet {
+      width: min(400px, 100%);
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+    }
+    .sheet h2 {
+      font-family: var(--font-display);
+      font-size: 28px; font-weight: 500;
+      margin: 0 0 8px;
+    }
+    .sheet p { color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
+    .sheet-actions { display: flex; gap: 8px; margin-top: 20px; }
+    .btn-ghost {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg);
+      min-height: 44px; padding: 0 16px;
+      border-radius: 999px;
+    }
+    .btn-ghost:hover { background: color-mix(in oklch, var(--fg) 8%, transparent); color: var(--fg); }
+    .btn-ghost:focus-visible, .sheet .btn-solid:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .sheet .btn-solid { margin-top: 0; }
+    a.btn-solid { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+    .pagefoot a { color: var(--muted); text-decoration: none; }
+    .pagefoot a:hover { color: var(--fg); }
+    .os-mark svg, .pop-appico svg { width: 100%; height: 100%; display: block; }
+
+    .toast {
+      position: fixed;
+      bottom: 20px; left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      opacity: 0; pointer-events: none;
+      z-index: 45;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 920px) {
+      .mb-extra { display: none; }
+      .mb-clock { min-width: 0; }
+      .os-note { right: 12px; top: 44px; }
+      .popover {
+        left: 8px; right: 8px; width: auto;
+        top: 40px; transform-origin: 50% 0;
+        max-height: calc(100vh - 52px);
+      }
+      .popover::before { display: none; }
+      .void { min-height: 130vh; padding: 40px 16px 48px; }
+      .util-win, .g-win { left: 12px; right: 12px; width: auto; }
+      .endband { padding: 72px 16px 40px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+      .void { min-height: 100vh; }
+      .instruments, .inst { opacity: 1; pointer-events: auto; transform: none; }
+    }
+  </style>
+</head>
+<body data-icon="healthy" data-objects="0">
+  <div class="void-glow" aria-hidden="true"></div>
+
+  <header class="menubar" data-od-id="menubar">
+    <div class="mb-left">
+      <svg class="apple" viewBox="0 0 14 17" aria-hidden="true"><path fill="currentColor" d="M11.4 9.1c0-1.8 1.5-2.7 1.6-2.8-0.9-1.3-2.2-1.4-2.7-1.5-1.1-0.1-2.2 0.7-2.8 0.7s-1.5-0.7-2.5-0.6c-1.3 0-2.4 0.7-3.1 1.9-1.3 2.3-0.3 5.7 0.9 7.5 0.6 0.9 1.3 1.9 2.3 1.8 0.9 0 1.3-0.6 2.4-0.6s1.4 0.6 2.5 0.6 1.6-0.9 2.2-1.8c0.7-1 1-2 1-2.1-0.1 0-1.8-0.7-1.8-2.9zm-1.7-5c0.5-0.6 0.9-1.5 0.8-2.4-0.8 0-1.7 0.5-2.2 1.2-0.5 0.6-0.9 1.5-0.8 2.3 0.9 0.1 1.7-0.4 2.2-1.1z"/></svg>
+      <span class="wordmark" data-od-id="wordmark"><span class="logo-glyph" aria-hidden="true"></span>Pulse</span>
+      <button class="mb-dl js-download" type="button" data-od-id="nav-download">Download</button>
+    </div>
+    <div class="mb-right">
+      <span class="mb-item mb-extra" aria-hidden="true">
+        <svg class="mb-ico" viewBox="0 0 16 16"><path fill="currentColor" d="M1 11.2a8 8 0 0 1 14 0l-1.2.8a6.5 6.5 0 0 0-11.6 0zm3.2-2.2a4.6 4.6 0 0 1 7.6 0L10.6 10a3.2 3.2 0 0 0-5.2 0zm2.6-1.8a2 2 0 0 1 2.4 0L8 9z"/></svg>
+      </span>
+      <span class="mb-item mb-batt mb-extra" aria-hidden="true">78%</span>
+      <button class="pulse-hit js-tray" type="button" data-od-id="tray-mark" aria-label="Pulse, all healthy" aria-expanded="false" aria-controls="popover">
+        <span class="pulse-glyph" aria-hidden="true"></span>
+        <span class="badge">1</span>
+      </button>
+      <span class="mb-item mb-clock js-clock">Tue 11:24 AM</span>
+    </div>
+  </header>
+
+  <button class="os-note js-note" type="button" data-od-id="banner" aria-live="polite">
+    <span class="os-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#f6f6f8"/><rect x="4" y="10" width="12" height="12" rx="2.4" fill="#36a15a"/><rect x="16" y="10" width="12" height="12" rx="2.4" fill="#36a15a" opacity=".38"/></svg></span>
+    <span>
+      <span class="os-app">Pulse</span>
+      <span class="os-title js-note-title">Payments API</span>
+      <span class="os-body js-note-body">HTTP 502 · 1.4s</span>
+    </span>
+    <span class="os-time">now</span>
+  </button>
+
+  <div class="popover js-pop" id="popover" data-od-id="popover" role="dialog" aria-label="Pulse">
+    <div class="pop-inner">
+      <div class="pop-head">
+        <div class="pop-brand">
+          <span class="pop-appico" aria-hidden="true"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#f6f6f8"/><rect x="4" y="10" width="12" height="12" rx="2.4" fill="#36a15a"/><rect x="16" y="10" width="12" height="12" rx="2.4" fill="#36a15a" opacity=".38"/></svg></span>
+          <div>
+            <div class="pop-title">Pulse</div>
+            <p class="pop-sum js-pop-sum">7 services · last check just now</p>
+          </div>
+        </div>
+        <span class="js-pop-count spill spill-ok">All healthy</span>
+      </div>
+      <div class="svc-list js-list" data-od-id="service-list"></div>
+      <div class="pop-foot">
+        <div class="pop-foot-l">
+          <button class="mini js-checkall" type="button" data-od-id="check-all">Check all</button>
+          <button class="mini js-add" type="button" data-od-id="add-service">Add</button>
+        </div>
+        <div class="pop-foot-r">
+          <button class="mini js-settings" type="button" data-od-id="open-settings">Settings</button>
+          <div class="more-wrap">
+            <button class="mini js-more" type="button" aria-haspopup="true">•••</button>
+            <div class="more-menu js-more-menu">
+              <button type="button" class="js-quit">Quit Pulse</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="util-win js-add-win" data-od-id="add-window" role="dialog" aria-labelledby="add-title">
+    <div class="win-bar"><span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span><span id="add-title">Add service</span></div>
+    <div class="win-body">
+      <div class="field">
+        <label for="add-name">Name</label>
+        <input id="add-name" value="Billing API" />
+      </div>
+      <div class="field">
+        <label for="add-url">URL</label>
+        <input id="add-url" value="https://pay.internal/v1/healthz" />
+      </div>
+      <div class="seg" role="group" aria-label="Method">
+        <button type="button">GET</button>
+        <button type="button">HEAD</button>
+        <button type="button" class="on">POST</button>
+      </div>
+      <div class="field">
+        <label for="add-header">Header</label>
+        <input id="add-header" value="Authorization ••••••••" readonly />
+      </div>
+      <div class="field">
+        <label for="add-assert">Assertion</label>
+        <input id="add-assert" value="$.status equals ok" />
+      </div>
+      <div id="test-result" class="pop-sum"></div>
+      <div class="win-actions">
+        <button class="mini js-add-cancel" type="button">Cancel</button>
+        <button class="mini" type="button" id="test-now">Test now</button>
+        <button class="mini primary js-add-save" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="util-win settings js-settings-win" data-od-id="settings-window" role="dialog" aria-labelledby="set-title">
+    <div class="win-bar"><span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span><span id="set-title">Settings</span></div>
+    <div class="win-body">
+      <div class="set-row">Launch at login <button class="switch js-switch" type="button" aria-pressed="true" aria-label="Launch at login"></button></div>
+      <div class="set-row">Fail after 3 <button class="switch js-switch" type="button" aria-pressed="true" aria-label="Fail after 3"></button></div>
+      <div class="set-row">Quiet hours <button class="switch js-switch off" type="button" aria-pressed="false" aria-label="Quiet hours"></button></div>
+      <div class="win-actions">
+        <button class="mini js-settings" type="button">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="g-win js-grafana" data-od-id="action-panel" role="dialog" aria-label="Grafana">
+    <div class="g-bar">
+      <span>Grafana · <span class="js-g-name">Payments API</span></span>
+      <button type="button" class="js-g-close">Close</button>
+    </div>
+    <div class="g-body">
+      <svg class="g-chart" viewBox="0 0 360 88" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 62 C40 60 70 61 110 58 C150 55 170 22 210 18 C250 14 270 70 310 74 L360 76" fill="none" stroke="currentColor" stroke-width="2" />
+      </svg>
+      <p class="g-cap js-g-cap">pay.internal/v1/healthz · 502</p>
+    </div>
+  </div>
+
+  <main>
+    <section class="void" id="void" data-od-id="void">
+      <div class="instruments" data-od-id="instruments">
+        <div class="inst" data-od-id="object-assert">
+          <div class="inst-k">$.status equals ok</div>
+          <div class="inst-v" id="assert-val">ok</div>
+        </div>
+        <div class="inst" data-od-id="object-secret">
+          <div class="inst-k">Authorization</div>
+          <div class="secret-row"><span class="secret-val">••••••••</span></div>
+          <p class="never">never in a banner</p>
+        </div>
+        <div class="inst" data-od-id="object-recover">
+          <div class="inst-k">Last 4</div>
+          <div class="stops" id="rec-spark" data-state="ok" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <button class="check-now" type="button" data-act="check" data-id="payments">Check now</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="endband" data-od-id="end-band">
+      <h1>Quiet until three failures say it’s real.</h1>
+      <p class="sys">macOS 13+ · Apple silicon · nothing leaves the machine</p>
+      <button class="btn-solid js-download" type="button" data-od-id="cta-download">Download for Mac</button>
+    </section>
+  </main>
+
+  <footer class="pagefoot" data-od-id="footer">
+    <span><b>Pulse</b> · Genwright</span>
+    <span><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></span>
+    <span>Local-only / no telemetry · macOS</span>
+  </footer>
+
+  <div class="sheet-back" id="sheet" data-od-id="download-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+    <div class="sheet">
+      <h2 id="sheet-title">Pulse.app.zip</h2>
+      <p id="sheet-copy">Apple silicon · macOS 13 Ventura or later. Unsigned — in Finder, right-click Pulse.app → Open. The first secret check will ask for Keychain: choose Always Allow.</p>
+      <div class="sheet-actions">
+        <button class="btn-ghost" type="button" id="sheet-close">Cancel</button>
+        <a class="btn-solid" id="sheet-get" href="#">Download Pulse.app.zip</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast js-toast" role="status"></div>
+
+  <script>
+    (function () {
+      var FAV_OK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='10' width='12' height='12' rx='2.4' fill='%2336a15a'/%3E%3Crect x='16' y='10' width='12' height='12' rx='2.4' fill='%2336a15a' opacity='.38'/%3E%3C/svg%3E";
+      var FAV_DOWN = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='10' width='12' height='12' rx='2.4' fill='%23e24b3c'/%3E%3Crect x='16' y='10' width='12' height='12' rx='2.4' fill='%23e24b3c' opacity='.38'/%3E%3C/svg%3E";
+
+      var services = [
+        { id: "payments", name: "Payments API", status: "healthy", snoozed: false, reason: "200 · 54ms", age: "4s ago", expected: "2xx · $.status equals ok", actual: "200 · ok", action: "Open Grafana", latency: "54ms", interval: "60s" },
+        { id: "worker", name: "Worker queue", status: "healthy", snoozed: false, reason: "200 · 80ms", age: "12s ago", expected: "2xx", actual: "200", action: "Open logs", latency: "80ms", interval: "30s" },
+        { id: "api", name: "Core API", status: "healthy", snoozed: false, reason: "200 · 48ms", age: "12s ago", expected: "2xx · $.status equals ok", actual: "200 · ok", action: "Open app", latency: "48ms", interval: "30s" },
+        { id: "auth", name: "Auth", status: "healthy", snoozed: false, reason: "200 · 61ms", age: "18s ago", expected: "2xx", actual: "200", action: "Open Grafana", latency: "61ms", interval: "60s" },
+        { id: "web", name: "Web", status: "healthy", snoozed: false, reason: "200 · 92ms", age: "22s ago", expected: "2xx", actual: "200", action: "Open site", latency: "92ms", interval: "60s" },
+        { id: "docs", name: "Docs", status: "healthy", snoozed: false, reason: "200 · 110ms", age: "40s ago", expected: "2xx", actual: "200", action: "Open docs", latency: "110ms", interval: "120s" },
+        { id: "nas", name: "NAS", status: "healthy", snoozed: false, reason: "200 · 31ms", age: "8s ago", expected: "2xx", actual: "200", action: "Open NAS", latency: "31ms", interval: "60s" }
+      ];
+
+      var state = {
+        open: false,
+        settings: false,
+        add: false,
+        grafana: false,
+        selected: "payments",
+        note: false,
+        noteKind: "down",
+        more: false,
+        snoozeFor: null,
+        tookOver: false,
+        introDone: false,
+        film: 0,
+        objects: false
+      };
+
+      var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var fav = document.getElementById("favicon");
+      var toastEl = document.querySelector(".js-toast");
+      var introTimers = [];
+
+      function findService(id) {
+        return services.find(function (s) { return s.id === id; });
+      }
+
+      function worstIcon() {
+        if (services.length && services.every(function (s) { return s.status === "paused"; })) return "paused";
+        if (services.some(function (s) { return s.status === "down"; })) return "down";
+        if (services.some(function (s) { return s.status === "degraded"; })) {
+          if (!state.tookOver && state.film < 2) return "healthy";
+          return "degraded";
+        }
+        return "healthy";
+      }
+
+      function counts() {
+        return {
+          down: services.filter(function (s) { return s.status === "down"; }).length,
+          degraded: services.filter(function (s) { return s.status === "degraded"; }).length,
+          paused: services.filter(function (s) { return s.status === "paused"; }).length,
+          healthy: services.filter(function (s) { return s.status === "healthy"; }).length
+        };
+      }
+
+      function spillFor(s) {
+        if (s.snoozed) return { cls: "spill spill-mute", label: "Snoozed" };
+        if (s.status === "down") return { cls: "spill spill-down", label: "Down" };
+        if (s.status === "degraded") return { cls: "spill spill-warn", label: "Degraded" };
+        if (s.status === "paused") return { cls: "spill spill-mute", label: "Paused" };
+        return { cls: "spill spill-ok", label: "Healthy" };
+      }
+
+      function trayLabel() {
+        var c = counts();
+        if (c.down) return "Pulse, " + c.down + " down";
+        if (c.degraded && (state.tookOver || state.film >= 2)) return "Pulse, degraded";
+        if (c.paused && !c.healthy) return "Pulse, paused";
+        return "Pulse, all healthy";
+      }
+
+      function sparkSvg(status) {
+        var pts = status === "down"
+          ? [8,9,7,8,10,9,8,7,9,8,11,9,8,7,9,12,26,30,28,31,33,30,29,32]
+          : status === "degraded"
+            ? [10,11,9,10,12,11,10,18,22,16,12,11,10,24,20,11,10,12,18,11,10,9,21,19]
+            : [10,12,9,11,10,8,9,11,10,12,9,10,11,8,9,10,12,9,11,10,9,8,10,11];
+        var w = 220, h = 28;
+        var d = pts.map(function (v, i) {
+          var x = (i / (pts.length - 1)) * w;
+          var y = h - (v / 36) * (h - 2) - 1;
+          return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+        }).join(" ");
+        return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      }
+
+      function renderList(root) {
+        var rank = { down: 0, degraded: 1, paused: 3, healthy: 4 };
+        var rows = services.slice().sort(function (a, b) {
+          var ra = a.snoozed ? 2 : rank[a.status];
+          var rb = b.snoozed ? 2 : rank[b.status];
+          return (ra - rb) || a.name.localeCompare(b.name);
+        });
+        root.innerHTML = rows.map(function (s) {
+          var selected = state.selected === s.id;
+          var dot = s.status === "down" ? "down" : s.status === "degraded" ? "warn" : (s.status === "paused") ? "mute" : "";
+          var pill = spillFor(s);
+          var snoozeOpen = state.snoozeFor === s.id ? " open" : "";
+          return (
+            '<div class="svc" data-id="' + s.id + '" data-od-id="svc-' + s.id + '" data-state="' + s.status + '" aria-selected="' + selected + '">' +
+              '<button class="svc-row" type="button" data-select="' + s.id + '">' +
+                '<span class="dot ' + dot + '" aria-hidden="true"></span>' +
+                '<span><span class="svc-name">' + s.name + '</span><div class="svc-meta">' + s.reason + '</div></span>' +
+                '<span class="svc-right">' +
+                  '<span class="svc-static"><span class="' + pill.cls + '">' + pill.label + '</span><div class="svc-age">' + s.age + '</div></span>' +
+                  '<span class="svc-hover">' +
+                    '<span class="ghost-mini" data-act="open" data-id="' + s.id + '">Open</span>' +
+                    '<span class="ghost-mini" data-act="check" data-id="' + s.id + '">Check</span>' +
+                  '</span>' +
+                '</span>' +
+              '</button>' +
+              (selected ? (
+                '<div class="svc-detail">' +
+                  '<div class="ev"><span>Expected</span><b>' + s.expected + '</b></div>' +
+                  '<div class="ev"><span>Actual</span><b>' + s.actual + '</b></div>' +
+                  '<div class="ev"><span>Latency</span><b>' + s.latency + ' · ' + s.interval + '</b></div>' +
+                  sparkSvg(s.status) +
+                  '<div class="spark-cap">Last 24 checks</div>' +
+                  '<div class="svc-actions">' +
+                    '<button class="mini primary" type="button" data-act="open" data-id="' + s.id + '">' + s.action + '</button>' +
+                    '<button class="mini" type="button" data-act="check" data-id="' + s.id + '">Check now</button>' +
+                    '<button class="mini" type="button" data-act="snooze-toggle" data-id="' + s.id + '">Snooze</button>' +
+                    '<button class="mini" type="button" data-act="pause" data-id="' + s.id + '">' + (s.status === "paused" ? "Resume" : "Pause") + '</button>' +
+                    '<div class="snooze-menu' + snoozeOpen + '">' +
+                      '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="15m">15 minutes</button>' +
+                      '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="1h">1 hour</button>' +
+                      '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="tomorrow">Until tomorrow</button>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>'
+              ) : '') +
+            '</div>'
+          );
+        }).join("");
+      }
+
+      function showToast(msg) {
+        if (!toastEl) return;
+        toastEl.textContent = msg;
+        toastEl.classList.add("show");
+        window.setTimeout(function () { toastEl.classList.remove("show"); }, 1600);
+      }
+
+      function syncChrome() {
+        var icon = worstIcon();
+        var pay = findService("payments");
+        document.body.setAttribute("data-icon", icon);
+        document.body.setAttribute("data-objects", state.objects ? "1" : "0");
+        if (!document.hidden) document.title = icon === "down" ? "1 · Pulse" : "Pulse";
+        if (fav) fav.href = icon === "down" ? FAV_DOWN : FAV_OK;
+        var assertVal = document.getElementById("assert-val");
+        if (assertVal) {
+          if (pay && pay.status === "down") {
+            assertVal.textContent = "undefined";
+            assertVal.classList.add("strike");
+          } else {
+            assertVal.textContent = "ok";
+            assertVal.classList.remove("strike");
+          }
+        }
+        var spark = document.getElementById("rec-spark");
+        if (spark) spark.setAttribute("data-state", pay && pay.status === "down" ? "down" : "ok");
+        var gcap = document.querySelector(".js-g-cap");
+        if (gcap) gcap.textContent = pay && pay.status === "down" ? "pay.internal/v1/healthz · 502" : "pay.internal/v1/healthz · 200";
+      }
+
+      function render() {
+        var c = counts();
+        var pop = document.querySelector(".js-pop");
+        var note = document.querySelector(".js-note");
+        var settings = document.querySelector(".js-settings-win");
+        var addWin = document.querySelector(".js-add-win");
+        var gWin = document.querySelector(".js-grafana");
+        var trays = document.querySelectorAll(".js-tray");
+        var countEl = document.querySelector(".js-pop-count");
+        var sumEl = document.querySelector(".js-pop-sum");
+        var list = document.querySelector(".js-list");
+        var more = document.querySelector(".js-more-menu");
+        if (pop) pop.classList.toggle("open", state.open);
+        trays.forEach(function (t) {
+          t.setAttribute("aria-expanded", state.open ? "true" : "false");
+          t.setAttribute("aria-label", trayLabel());
+        });
+        if (note) {
+          note.classList.toggle("show", state.note);
+          var title = note.querySelector(".js-note-title");
+          var body = note.querySelector(".js-note-body");
+          if (title) title.textContent = "Payments API";
+          if (body) body.textContent = state.noteKind === "up" ? "back · 4m down" : "HTTP 502 · 1.4s";
+        }
+        if (settings) settings.classList.toggle("open", state.settings);
+        if (addWin) addWin.classList.toggle("open", state.add);
+        if (gWin) gWin.classList.toggle("open", state.grafana);
+        if (more) more.classList.toggle("open", state.more);
+        if (countEl) {
+          if (c.down) { countEl.className = "js-pop-count spill spill-down"; countEl.textContent = c.down + " down"; }
+          else if (c.degraded) { countEl.className = "js-pop-count spill spill-warn"; countEl.textContent = c.degraded + " degraded"; }
+          else if (c.paused && !c.healthy) { countEl.className = "js-pop-count spill spill-mute"; countEl.textContent = "Paused"; }
+          else { countEl.className = "js-pop-count spill spill-ok"; countEl.textContent = "All healthy"; }
+        }
+        if (sumEl) {
+          sumEl.textContent = c.down
+            ? "Unhealthy first · " + c.healthy + " healthy"
+            : services.length + " services · last check just now";
+        }
+        if (list) renderList(list);
+        var badge = document.querySelector(".badge");
+        if (badge) badge.textContent = String(Math.max(c.down, 1));
+        syncChrome();
+      }
+
+      function clearIntro() {
+        introTimers.forEach(function (id) { window.clearTimeout(id); });
+        introTimers = [];
+      }
+
+      function takeOver() {
+        state.tookOver = true;
+        clearIntro();
+      }
+
+      function later(ms, fn) {
+        introTimers.push(window.setTimeout(fn, ms));
+      }
+
+      function applyBeat(n) {
+        if (n <= state.film && n !== 0) return;
+        if (n >= 1) {
+          services[1].status = "degraded";
+          services[1].reason = "timeout · 10.0s";
+          services[1].age = "1 miss";
+          services[1].latency = "10.0s";
+          services[1].actual = "timeout";
+        }
+        if (n >= 2) {
+          services[0].status = "down";
+          services[0].reason = "HTTP 502 · 1.4s";
+          services[0].age = "6m";
+          services[0].actual = "502 · body empty";
+          services[0].latency = "1.4s";
+          state.note = true;
+          state.noteKind = "down";
+          state.open = true;
+          state.selected = "payments";
+        }
+        if (n >= 3) state.objects = true;
+        state.film = Math.max(state.film, n);
+        render();
+      }
+
+      function applyAct(kind, id, extra) {
+        var svc = findService(id);
+        if (kind === "pause" && svc) {
+          svc.status = svc.status === "paused" ? "healthy" : "paused";
+          svc.reason = svc.status === "paused" ? "polling off" : "200 · 54ms";
+          svc.age = "just now";
+          svc.latency = svc.status === "paused" ? "—" : "54ms";
+          if (svc.status === "healthy") svc.actual = "200 · ok";
+        }
+        if (kind === "snooze-toggle") state.snoozeFor = state.snoozeFor === id ? null : id;
+        if (kind === "snooze" && svc) {
+          svc.snoozed = true;
+          svc.age = extra || "15m";
+          state.note = false;
+          state.snoozeFor = null;
+        }
+        if (kind === "check" && svc) {
+          svc.age = "just now";
+          if (svc.id === "payments" && svc.status === "down") {
+            svc.status = "healthy";
+            svc.reason = "200 · 47ms";
+            svc.actual = "200 · ok";
+            svc.latency = "47ms";
+            svc.snoozed = false;
+            state.note = true;
+            state.noteKind = "up";
+          } else if (svc.status !== "paused") {
+            showToast("Checked " + svc.name);
+          }
+        }
+        if (kind === "open" && svc) {
+          state.grafana = true;
+          state.note = false;
+          var nameEl = document.querySelector(".js-g-name");
+          if (nameEl) nameEl.textContent = svc.name;
+        }
+      }
+
+      document.addEventListener("click", function (e) {
+        var tray = e.target.closest(".js-tray");
+        if (tray) {
+          takeOver();
+          state.open = !state.open;
+          state.more = false;
+          state.snoozeFor = null;
+          render();
+          return;
+        }
+        var note = e.target.closest(".js-note");
+        if (note) {
+          takeOver();
+          state.open = true;
+          state.note = true;
+          state.selected = "payments";
+          render();
+          return;
+        }
+        var act = e.target.closest("[data-act]");
+        if (act) {
+          takeOver();
+          applyAct(act.getAttribute("data-act"), act.getAttribute("data-id") || (act.closest(".svc") && act.closest(".svc").getAttribute("data-id")), act.getAttribute("data-for"));
+          render();
+          e.stopPropagation();
+          return;
+        }
+        var row = e.target.closest("[data-select]");
+        if (row && row.closest(".js-list")) {
+          takeOver();
+          state.selected = row.getAttribute("data-select");
+          state.open = true;
+          state.snoozeFor = null;
+          render();
+          return;
+        }
+        if (e.target.closest(".js-checkall")) {
+          takeOver();
+          services.forEach(function (s) { if (s.status !== "paused") s.age = "just now"; });
+          showToast("Checked " + services.length + " services");
+          render();
+          return;
+        }
+        if (e.target.closest(".js-add")) {
+          takeOver();
+          state.add = !state.add;
+          state.settings = false;
+          state.open = true;
+          render();
+          return;
+        }
+        if (e.target.closest(".js-add-cancel")) { state.add = false; render(); return; }
+        if (e.target.closest(".js-add-save")) {
+          takeOver();
+          var nameEl = document.getElementById("add-name");
+          var assertEl = document.getElementById("add-assert");
+          var name = (nameEl && nameEl.value.trim()) || "Billing API";
+          var id = "svc-" + Date.now();
+          services.push({ id: id, name: name, status: "healthy", snoozed: false, reason: "200 · 41ms", age: "just now", expected: (assertEl && assertEl.value) || "2xx", actual: "200 · ok", action: "Open app", latency: "41ms", interval: "60s" });
+          state.add = false;
+          state.selected = id;
+          showToast("Polling " + name);
+          render();
+          return;
+        }
+        if (e.target.closest(".js-settings")) {
+          takeOver();
+          state.settings = !state.settings;
+          state.add = false;
+          state.open = true;
+          state.more = false;
+          render();
+          return;
+        }
+        if (e.target.closest(".js-more")) { takeOver(); state.more = !state.more; render(); return; }
+        if (e.target.closest(".js-quit")) {
+          takeOver();
+          state.open = false; state.settings = false; state.add = false; state.more = false; state.grafana = false;
+          render();
+          return;
+        }
+        if (e.target.closest(".js-g-close")) { state.grafana = false; render(); return; }
+        if (e.target.closest(".js-switch")) {
+          var sw = e.target.closest(".js-switch");
+          sw.classList.toggle("off");
+          sw.setAttribute("aria-pressed", sw.classList.contains("off") ? "false" : "true");
+          return;
+        }
+        if (e.target.closest(".popover") || e.target.closest(".util-win") || e.target.closest(".os-note") || e.target.closest(".g-win") || e.target.closest(".sheet") || e.target.closest(".js-download")) return;
+        if (state.open || state.settings || state.add || state.grafana) {
+          if (!e.target.closest(".menubar")) {
+            state.open = false;
+            state.settings = false;
+            state.add = false;
+            state.more = false;
+            state.grafana = false;
+            state.snoozeFor = null;
+            render();
+          }
+        }
+      });
+
+      var sheet = document.getElementById("sheet");
+      var sheetGet = document.getElementById("sheet-get");
+      var sheetTitle = document.getElementById("sheet-title");
+      var sheetCopy = document.getElementById("sheet-copy");
+      var GH = (document.querySelector('meta[name="pulse-github"]') || {}).content || "pulsebar/pulse";
+      var downloadUrl = "https://github.com/" + GH + "/releases/latest/download/Pulse.app.zip";
+      sheetGet.href = downloadUrl;
+      fetch("https://api.github.com/repos/" + GH + "/releases/latest")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (rel) {
+          if (!rel || !rel.assets) return;
+          var asset = rel.assets.find(function (a) {
+            return /\.(zip|dmg)$/i.test(a.name);
+          });
+          if (!asset) {
+            sheetCopy.textContent = "Apple silicon · macOS 13+. No build is attached to the latest release yet.";
+            sheetGet.removeAttribute("href");
+            sheetGet.setAttribute("aria-disabled", "true");
+            return;
+          }
+          downloadUrl = asset.browser_download_url;
+          sheetGet.href = downloadUrl;
+          sheetTitle.textContent = asset.name;
+          sheetGet.textContent = "Download " + asset.name;
+        })
+        .catch(function () {});
+      function openSheet() {
+        takeOver();
+        sheet.hidden = false;
+        sheet.classList.add("open");
+        document.getElementById("sheet-close").focus();
+      }
+      function closeSheet() {
+        sheet.classList.remove("open");
+        sheet.hidden = true;
+      }
+      document.querySelectorAll(".js-download").forEach(function (btn) {
+        btn.addEventListener("click", openSheet);
+      });
+      document.getElementById("sheet-close").addEventListener("click", closeSheet);
+      sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(); });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Tab") takeOver();
+        if (e.key === "Escape") {
+          if (sheet.classList.contains("open")) { closeSheet(); return; }
+          if (state.snoozeFor) { state.snoozeFor = null; render(); return; }
+          if (state.more) { state.more = false; render(); return; }
+          if (state.add) { state.add = false; render(); return; }
+          if (state.settings) { state.settings = false; render(); return; }
+          if (state.grafana) { state.grafana = false; render(); return; }
+          state.open = false;
+          render();
+        }
+        if ((e.key === "r" || e.key === "R") && state.open && state.selected) {
+          applyAct("check", state.selected);
+          render();
+        }
+      });
+
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) document.title = "Pulse";
+        else syncChrome();
+      });
+
+      function tickClock() {
+        var now = new Date();
+        var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        var h = now.getHours();
+        var ap = h >= 12 ? "PM" : "AM";
+        var h12 = h % 12 || 12;
+        var m = String(now.getMinutes()).padStart(2, "0");
+        document.querySelectorAll(".js-clock").forEach(function (el) {
+          el.textContent = days[now.getDay()] + " " + h12 + ":" + m + " " + ap;
+        });
+      }
+      tickClock();
+      setInterval(tickClock, 15000);
+
+      var testBtn = document.getElementById("test-now");
+      var testOut = document.getElementById("test-result");
+      testBtn.addEventListener("click", function () {
+        testOut.textContent = "Checking…";
+        window.setTimeout(function () {
+          testOut.innerHTML = '<span class="spill spill-ok">Pass</span> &nbsp;200 · 47ms · $.status equals ok';
+        }, reduce ? 0 : 700);
+      });
+
+      document.querySelectorAll(".seg button").forEach(function (b) {
+        b.addEventListener("click", function () {
+          document.querySelectorAll(".seg button").forEach(function (x) { x.classList.remove("on"); });
+          b.classList.add("on");
+        });
+      });
+
+      function playIntro() {
+        if (state.introDone || state.tookOver) return;
+        state.introDone = true;
+        if (reduce) {
+          applyBeat(3);
+          return;
+        }
+        render();
+        later(4000, function () { if (!state.tookOver) applyBeat(1); });
+        later(8000, function () { if (!state.tookOver) applyBeat(2); });
+        later(9200, function () { if (!state.tookOver) applyBeat(3); });
+      }
+
+      window.addEventListener("scroll", function () {
+        if (state.tookOver) return;
+        var voidEl = document.getElementById("void");
+        if (!voidEl) return;
+        var max = Math.max(voidEl.offsetHeight - window.innerHeight, 1);
+        var p = Math.min(1, Math.max(0, window.scrollY / max));
+        if (p > 0.72) applyBeat(3);
+        else if (p > 0.38) applyBeat(2);
+        else if (p > 0.16) applyBeat(1);
+      }, { passive: true });
+
+      playIntro();
+      render();
+    })();
+  </script>
+</body>
+</html>

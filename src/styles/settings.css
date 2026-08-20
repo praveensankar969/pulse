@@ -1,10 +1,18 @@
-.settings {
-  display: grid;
-  grid-template-columns: 132px 1fr;
+html.settings,
+html.settings body,
+html.settings #root {
+  width: 100%;
   height: 100%;
+  overflow: hidden;
+}
+
+.settings {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
   background: var(--bg-1);
   color: var(--text-0);
-  position: relative;
 }
 
 .settings-nav {
@@ -12,7 +20,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 10px 8px;
-  border-right: 1px solid var(--border);
+  border-right: 0.5px solid var(--hair);
   background: var(--bg-0);
 }
 
@@ -21,33 +29,30 @@
   background: transparent;
   text-align: left;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-1);
   font-size: 12px;
+  font-weight: 550;
 }
 
 .settings-nav button:hover {
   color: var(--text-0);
-  background: var(--bg-2);
+  background: var(--hover);
 }
 
 .settings-nav button.is-active {
   color: var(--text-0);
-  background: var(--bg-2);
+  background: var(--hover);
 }
 
 .settings-nav button:focus-visible {
-  outline: 2px solid var(--accent);
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--bg-1);
-  color: var(--text-0);
+  outline: 2px solid var(--focus);
 }
 
 .settings-panes {
   padding: 14px 16px;
   overflow: auto;
+  min-width: 0;
 }
 
 .settings-pane {
@@ -58,6 +63,7 @@
 .field {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .field > span {
@@ -68,21 +74,20 @@
 .field input,
 .field select,
 .field textarea {
-.field select {
+  width: 100%;
+  min-width: 0;
   background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
+  border: 1px solid var(--text-0);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
 }
 
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-.field select:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-  border-color: transparent;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .mono,
@@ -115,12 +120,13 @@
 }
 
 .check-row input {
-  accent-color: var(--accent);
+  flex: 0 0 auto;
+  accent-color: var(--ok);
 }
 
 .quiet-hours {
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 0.5px solid var(--hair);
+  border-radius: var(--radius-sm);
   padding: 10px 12px 12px;
 }
 
@@ -138,18 +144,22 @@
 }
 
 .day-pills button {
-  border: 1px solid var(--border);
+  border: 0;
   background: var(--bg-2);
   color: var(--text-1);
-  border-radius: 4px;
-  padding: 3px 7px;
-  font-size: 11px;
+  border-radius: var(--radius-pill);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .day-pills button.is-on {
-  color: var(--text-0);
-  border-color: var(--accent);
-  background: var(--accent-bg);
+  color: var(--bg-1);
+  background: var(--text-0);
+}
+
+.day-pills button:focus-visible {
+  outline: 2px solid var(--focus);
 }
 
 .data-actions {
@@ -159,22 +169,24 @@
 
 hr {
   border: 0;
-  border-top: 1px solid var(--border);
+  border-top: 0.5px solid var(--hair);
   margin: 4px 0;
 }
 
 .btn {
-  border: 1px solid var(--border);
-  background: var(--bg-2);
+  appearance: none;
+  border: 0;
+  background: color-mix(in srgb, var(--text-0) 6%, transparent);
   color: var(--text-0);
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 6px 10px;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .btn:hover:not(:disabled):not(.primary) {
-  background: color-mix(in srgb, var(--bg-2) 70%, var(--text-0) 10%);
+  background: color-mix(in srgb, var(--text-0) 12%, transparent);
 }
 
 .btn:disabled {
@@ -183,24 +195,23 @@ hr {
 }
 
 .btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
 .btn.primary {
-  background: var(--accent);
-  border-color: transparent;
-  color: #0b1220;
+  background: var(--text-0);
+  color: var(--bg-1);
   font-weight: 600;
 }
 
 .btn.primary:hover:not(:disabled) {
-  filter: brightness(1.06);
-  background: var(--accent);
+  filter: none;
+  background: var(--text-0);
 }
 
 .btn.danger {
-  color: var(--down);
+  color: var(--down-ink);
 }
 
 .launch-prompt {
@@ -224,6 +235,4 @@ hr {
 .launch-prompt-actions {
   display: flex;
   gap: 8px;
-.day-pills button:focus-visible {
-  outline: 2px solid var(--accent);
 }

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { sortServices, summary } from "../../lib/format";
+import { onPopoverShown } from "../../lib/ipc";
 import {
   addService,
   checkEvery,
@@ -13,6 +14,7 @@ import {
   togglePauseSelected,
   usePulseStore,
 } from "../../state/store";
+import { BrandMark } from "../shared/BrandMark";
 import { EmptyState } from "./EmptyState";
 import { Footer } from "./Footer";
 import { ServiceRow } from "./ServiceRow";
@@ -20,9 +22,12 @@ import { ServiceRow } from "./ServiceRow";
 export function Popover() {
   const { services, selectedId, pollerDead, checkingIds, now, ready } = usePulseStore();
   const listRef = useRef<HTMLUListElement>(null);
+  const keyboardNav = useRef(false);
+  const [entering, setEntering] = useState(false);
   const sorted = useMemo(() => sortServices(services, now), [services, now]);
   const head = useMemo(() => summary(services), [services]);
   const checking = useMemo(() => new Set(checkingIds), [checkingIds]);
+  const pillText = head.stripText.split(" · ")[0];
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -41,13 +46,19 @@ export function Popover() {
       if (event.key === "ArrowDown") {
         event.preventDefault();
         const next = sorted[Math.min(sorted.length - 1, Math.max(0, idx) + 1)];
-        if (next) selectService(next.id);
+        if (next) {
+          keyboardNav.current = true;
+          selectService(next.id);
+        }
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
         const next = sorted[Math.max(0, idx - 1)];
-        if (next) selectService(next.id);
+        if (next) {
+          keyboardNav.current = true;
+          selectService(next.id);
+        }
         return;
       }
       if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey) {
@@ -85,35 +96,50 @@ export function Popover() {
     );
     if (row instanceof HTMLElement) {
       row.scrollIntoView({ block: "nearest" });
-      if (document.activeElement !== row) row.focus();
+      if (keyboardNav.current) {
+        keyboardNav.current = false;
+        if (document.activeElement !== row) row.focus();
+      }
     }
   }, [selectedId]);
 
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    void onPopoverShown(() => {
+      setEntering(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setEntering(true));
+      });
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
+    return () => stop?.();
+  }, []);
+
   return (
-    <main className="popover" role="dialog" aria-label="Pulse">
+    <main
+      className={`popover${entering ? " is-entering" : ""}`}
+      role="dialog"
+      aria-label="Pulse"
+      onAnimationEnd={() => setEntering(false)}
+    >
       <header className="popover-head">
-        <div className="popover-title">
-          <h1 className="wordmark">Pulse</h1>
-          <span className="count">{ready ? head.countText : ""}</span>
+        <div className="pop-brand">
+          <BrandMark />
+          <div>
+            <h1 className="wordmark">Pulse</h1>
+            <p className="count">{ready ? head.countText : ""}</p>
+          </div>
         </div>
-        <button
-          type="button"
-          className="icon-btn"
-          title="Add service"
-          aria-label="Add service"
-          onClick={() => void addService()}
-        >
-          +
-        </button>
+        {ready ? (
+          <span className={`pill ${head.stripTone}`}>{pillText}</span>
+        ) : null}
       </header>
       {pollerDead ? (
         <div className="poller-dead" role="alert">
           Pulse's checker stopped — restart the app.
         </div>
       ) : null}
-      <div className={`summary-strip is-${ready ? head.stripTone : "neutral"}`}>
-        {ready ? head.stripText : ""}
-      </div>
       {!ready ? null : sorted.length === 0 ? (
         <EmptyState onAdd={() => void addService()} />
       ) : (
@@ -136,6 +162,7 @@ export function Popover() {
       )}
       <Footer
         onCheckAll={() => void checkEvery()}
+        onAdd={() => void addService()}
         onSettings={() => void openSettings()}
         onQuit={() => void quitApp()}
       />

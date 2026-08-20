@@ -1,37 +1,34 @@
 :root {
-  --bg-0: #0e1014;
-  --bg-1: #161a22;
-  --bg-2: #1e242e;
-  --border: #2a3140;
-  --text-0: #e6e8ee;
-  --text-1: #9aa3b2;
-  --text-2: #6b7380;
-  --ok: #3ddc97;
-  --warn: #f5b942;
-  --down: #f0534a;
-  --muted: #6b7380;
-  --accent: #6ea8fe;
-  /* Mix onto --bg-0 so 12% fills stay opaque; transparent tints fail 4.5:1 on hover. */
-  --ok-bg: color-mix(in srgb, var(--ok) 12%, var(--bg-0));
-  --warn-bg: color-mix(in srgb, var(--warn) 12%, var(--bg-0));
-  --down-bg: color-mix(in srgb, var(--down) 12%, var(--bg-0));
-  --muted-bg: color-mix(in srgb, var(--muted) 12%, var(--bg-0));
-  --accent-bg: color-mix(in srgb, var(--accent) 14%, transparent);
-  --sans: -apple-system, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui,
+  --bg-0: #ffffff;
+  --bg-1: #f6f6f8;
+  --bg-2: #efeff2;
+  --border: rgba(60, 60, 67, 0.12);
+  --hair: rgba(60, 60, 67, 0.12);
+  --text-0: #1d1d1f;
+  --text-1: #6e6e73;
+  --text-2: #86868b;
+  --hover: rgba(0, 0, 0, 0.045);
+  --ok: #36a15a;
+  --warn: oklch(70% 0.13 85);
+  --down: #e24b3c;
+  --muted: #c7c7cc;
+  --accent: #36a15a;
+  --accent-ink: #0d3d1c;
+  --focus: #007aff;
+  --ok-bg: color-mix(in srgb, var(--ok) 18%, #fff);
+  --warn-bg: color-mix(in srgb, var(--warn) 22%, #fff);
+  --down-bg: color-mix(in srgb, var(--down) 18%, #fff);
+  --muted-bg: #ececee;
+  --accent-bg: color-mix(in srgb, var(--ok) 14%, #fff);
+  --ok-ink: #0d6a32;
+  --warn-ink: #8a5a00;
+  --down-ink: #9b1c1c;
+  --primary-fg: #ffffff;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui,
     sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-}
-
-[data-theme="light"] {
-  --bg-0: #f4f5f7;
-  --bg-1: #ffffff;
-  --bg-2: #eef0f4;
-  --border: #d5d9e2;
-  --text-0: #16181d;
-  --text-1: #4b5563;
-  --text-2: #6b7380;
-  --ok-bg: color-mix(in srgb, var(--ok) 12%, var(--bg-0));
-  --warn-bg: color-mix(in srgb, var(--warn) 12%, var(--bg-0));
-  --down-bg: color-mix(in srgb, var(--down) 12%, var(--bg-0));
-  --muted-bg: color-mix(in srgb, var(--muted) 12%, var(--bg-0));
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 99px;
 }

@@ -1,19 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use tauri::{AppHandle, State, WebviewWindow};
-
-use crate::domain::{AppSettings, CheckEvidence, CheckResult, ServiceDraft, ServiceView};
-use crate::ipc::draft::run_test_draft;
-use chrono::{DateTime, Utc};
-use serde::Serialize;
-use tauri::{State, WebviewWindow};
-
-use crate::domain::{CheckResult, CompactSample, ServiceView};
-
-use crate::domain::{CheckResult, ServiceDraft, ServiceView};
-use crate::notify::request_permission_on_notify_save;
-use crate::domain::{AppSettings, CheckResult, ServiceView};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WebviewWindow};

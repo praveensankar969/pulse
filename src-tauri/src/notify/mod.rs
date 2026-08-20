@@ -6,14 +6,13 @@ pub use copy::{
     digest_body, digest_title, down_body, down_title, format_duration, format_latency,
     recovered_body, recovered_title, DIGEST_BODY_MAX,
 };
-pub use quiet::{
-    flush_quiet_queue, in_quiet_hours, in_quiet_window, QueueOp, QueuedDown, QuietQueue,
-};
 pub use os::{
     handle_activation, last_notified_service_id, parse_focus_args,
     request_permission_on_notify_save, NotifyHub, OsNotifier, FOCUS_LAUNCH,
 };
-pub use quiet::{in_quiet_hours, in_quiet_window, QueueOp, QueuedDown, QuietQueue};
+pub use quiet::{
+    flush_quiet_queue, in_quiet_hours, in_quiet_window, QueueOp, QueuedDown, QuietQueue,
+};
 
 use chrono::{DateTime, Utc};
 

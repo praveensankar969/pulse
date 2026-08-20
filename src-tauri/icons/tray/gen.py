@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Rasterize tray source marks to mac 18/36 and win 16/32 PNGs."""
+"""Rasterize dual-square tray marks to mac 18/36 and win 16/32 PNGs.
+
+Runtime icons are painted in src-tauri/src/platform/tray.rs. This script
+keeps the checked-in PNG fallbacks in sync with the SVGs.
+"""
 
 from __future__ import annotations
 
@@ -8,11 +12,11 @@ import struct
 import zlib
 from pathlib import Path
 
-OK = (0x3D, 0xDC, 0x97)
-WARN = (0xF5, 0xB9, 0x42)
-DANGER = (0xF0, 0x53, 0x4A)
-MUTED = (0x6B, 0x73, 0x80)
-SLASH = (0xC8, 0xCD, 0xD6)
+OK = (0x36, 0xA1, 0x5A)
+WARN = (0xD4, 0xA0, 0x2A)
+DANGER = (0xE2, 0x4B, 0x3C)
+MUTED = (0xC7, 0xC7, 0xCC)
+SLASH = (0x8E, 0x8E, 0x93)
 WHITE = (0xFF, 0xFF, 0xFF)
 
 GLYPHS = {
@@ -57,29 +61,59 @@ def dist_to_segment(px, py, x1, y1, x2, y2):
     return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 
 
+def round_rect_cover(x, y, rx, ry, w, h, radius):
+    px_c, py_c = x + 0.5, y + 0.5
+    if not (rx <= px_c <= rx + w and ry <= py_c <= ry + h):
+        return 0.0
+    radius = min(radius, w / 2.0, h / 2.0)
+    cx = min(max(px_c, rx + radius), rx + w - radius)
+    cy = min(max(py_c, ry + radius), ry + h - radius)
+    dist = math.hypot(px_c - cx, py_c - cy)
+    if dist <= radius:
+        return max(0.6, max(0.0, min(1.0, radius + 0.5 - dist)))
+    return 0.0
+
+
 def paint(kind: str, size: int, logical: float, badge: int | None = None) -> bytearray:
     px = bytearray(size * size * 4)
     scale = size / logical
+    side = 7.2 * scale
+    offset = 5.0 * scale
+    radius = 1.6 * scale
+    total_w = offset + side
+    x0 = (size - total_w) / 2.0
+    y0 = (size - side) / 2.0
+    stroke = 1.35 * scale
     cx = cy = size / 2.0
-    radius = 4.0 * scale
-    stroke = 1.5 * scale
     slash_half = 6.0 * scale
     slash_w = 0.75 * scale
 
-    def fill(rgb):
-        for y in range(size):
-            for x in range(size):
-                cover = circle_cover(x, y, cx, cy, radius)
+    def fill_sq(x, y, rgb, alpha):
+        for py in range(size):
+            for px_i in range(size):
+                cover = round_rect_cover(px_i, py, x, y, side, side, radius) * alpha
                 if cover > 0:
-                    blend(px, (y * size + x) * 4, rgb, cover)
+                    blend(px, (py * size + px_i) * 4, rgb, cover)
 
-    def ring(rgb):
-        inner = max(0.0, radius - stroke)
-        for y in range(size):
-            for x in range(size):
-                cover = max(0.0, min(1.0, circle_cover(x, y, cx, cy, radius) - circle_cover(x, y, cx, cy, inner)))
+    def stroke_sq(x, y, rgb, alpha):
+        inner = max(0.6, stroke)
+        for py in range(size):
+            for px_i in range(size):
+                outer = round_rect_cover(px_i, py, x, y, side, side, radius)
+                hole = round_rect_cover(
+                    px_i, py, x + inner, y + inner, max(0.0, side - inner * 2), max(0.0, side - inner * 2), max(0.0, radius - inner)
+                )
+                cover = max(0.0, min(1.0, outer - hole)) * alpha
                 if cover > 0:
-                    blend(px, (y * size + x) * 4, rgb, cover)
+                    blend(px, (py * size + px_i) * 4, rgb, cover)
+
+    def pair_fill(rgb):
+        fill_sq(x0, y0, rgb, 1.0)
+        fill_sq(x0 + offset, y0, rgb, 0.38)
+
+    def pair_stroke(rgb):
+        stroke_sq(x0, y0, rgb, 1.0)
+        stroke_sq(x0 + offset, y0, rgb, 0.38)
 
     def slash(rgb):
         x1, y1, x2, y2 = cx - slash_half, cy + slash_half, cx + slash_half, cy - slash_half
@@ -90,20 +124,20 @@ def paint(kind: str, size: int, logical: float, badge: int | None = None) -> byt
                     blend(px, (y * size + x) * 4, rgb, cover)
 
     if kind == "healthy":
-        fill(OK)
+        pair_fill(OK)
     elif kind == "degraded":
-        fill(WARN)
+        pair_fill(WARN)
     elif kind == "down":
-        fill(DANGER)
+        pair_fill(DANGER)
         if badge:
             draw_badge(px, size, scale, badge)
     elif kind == "hollow":
-        ring(MUTED)
+        pair_stroke(MUTED)
     elif kind == "offline":
-        fill(MUTED)
+        pair_fill(MUTED)
         slash(SLASH)
     elif kind == "poller-dead":
-        ring(DANGER)
+        pair_stroke(DANGER)
         slash(DANGER)
     return px
 

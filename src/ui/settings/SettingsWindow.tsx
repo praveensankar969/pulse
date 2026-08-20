@@ -22,7 +22,7 @@ import {
   WEEKDAYS,
 } from "../../lib/settings";
 import { applyTheme } from "../../lib/theme";
-import type { AppSettings, QuietHours, Theme } from "../../lib/types";
+import type { AppSettings, QuietHours } from "../../lib/types";
 
 type Pane = "general" | "notifications" | "defaults" | "data";
 
@@ -32,12 +32,6 @@ const PANES: Array<{ id: Pane; label: string }> = [
   { id: "defaults", label: "Defaults" },
   { id: "data", label: "Data" },
 ];
-  DEFAULT_QUIET_HOURS,
-  inQuietWindow,
-  WEEKDAYS,
-} from "../../lib/format";
-import { getSettings, onSettings, updateSettings } from "../../lib/ipc";
-import type { AppSettings, QuietHours } from "../../lib/types";
 
 function cloneSettings(settings: AppSettings): AppSettings {
   return {
@@ -58,14 +52,6 @@ export function SettingsWindow() {
   const [replaceSettings, setReplaceSettings] = useState(false);
   const [resetTyped, setResetTyped] = useState("");
   const [failDraft, setFailDraft] = useState("3");
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const tick = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(tick);
-  }, []);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -76,7 +62,7 @@ export function SettingsWindow() {
         const loaded = await getSettings();
         setSettings(loaded);
         setFailDraft(String(loaded.failThreshold));
-        applyTheme(loaded.theme);
+        applyTheme();
         if (await pendingLaunchPrompt()) setAskLaunch(true);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -87,7 +73,7 @@ export function SettingsWindow() {
           await onSettings((next) => {
             setSettings(next);
             setFailDraft(String(next.failThreshold));
-            applyTheme(next.theme);
+            applyTheme();
           }),
         );
         unlisten.push(
@@ -101,14 +87,6 @@ export function SettingsWindow() {
       stop = () => {
         for (const fn of unlisten) fn();
       };
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
-      try {
-        stop = await onSettings(setSettings);
-      } catch {
-        // Vite-only preview has no Tauri events.
-      }
     })();
     return () => stop?.();
   }, []);
@@ -125,10 +103,6 @@ export function SettingsWindow() {
         void getCurrentWindow().close();
       } catch {
         // Browser/vite-only.
-      try {
-        void getCurrentWindow().close();
-      } catch {
-        // Vite-only.
       }
     };
     window.addEventListener("keydown", onKey);
@@ -155,7 +129,6 @@ export function SettingsWindow() {
       unlisten?.();
     };
   }, [askLaunch]);
-  }, []);
 
   async function persist(next: AppSettings): Promise<void> {
     setError(null);
@@ -163,8 +136,7 @@ export function SettingsWindow() {
       const saved = await updateSettings(next);
       setSettings(saved);
       setFailDraft(String(saved.failThreshold));
-      applyTheme(saved.theme);
-      setSettings(await updateSettings(next));
+      applyTheme();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -344,19 +316,6 @@ export function SettingsWindow() {
                   void patch({ hotkey: value || undefined });
                 }}
               />
-            </label>
-            <label className="field">
-              <span>Theme</span>
-              <select
-                value={settings.theme}
-                onChange={(event) =>
-                  void patch({ theme: event.target.value as Theme })
-                }
-              >
-                <option value="system">System</option>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
             </label>
           </section>
         ) : null}
@@ -577,109 +536,6 @@ export function SettingsWindow() {
             </button>
           </section>
         ) : null}
-  const active = quietOn && quiet ? inQuietWindow(quiet, new Date(now)) : false;
-
-  return (
-    <main className="settings" aria-label="Settings">
-      <div className="settings-panes">
-        <section className="settings-pane" data-pane="notifications">
-          {error ? (
-            <p className="hint danger-text" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={settings.notifications}
-              onChange={(event) =>
-                void patch({ notifications: event.target.checked })
-              }
-            />
-            <span>Notifications</span>
-          </label>
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={settings.sound}
-              onChange={(event) => void patch({ sound: event.target.checked })}
-            />
-            <span>Play sound</span>
-          </label>
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={quietOn}
-              onChange={(event) =>
-                void patch({
-                  quietHours: event.target.checked
-                    ? { ...DEFAULT_QUIET_HOURS, days: [...DEFAULT_QUIET_HOURS.days] }
-                    : undefined,
-                })
-              }
-            />
-            <span>Quiet hours</span>
-          </label>
-          {quietOn && quiet ? (
-            <fieldset className="quiet-hours">
-              <legend>Quiet hours</legend>
-              <div className="row-2">
-                <label className="field">
-                  <span>Start</span>
-                  <input
-                    type="time"
-                    value={quiet.start}
-                    onChange={(event) =>
-                      void persist({
-                        ...settings,
-                        quietHours: {
-                          ...quiet,
-                          start: event.target.value.slice(0, 5),
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>End</span>
-                  <input
-                    type="time"
-                    value={quiet.end}
-                    onChange={(event) =>
-                      void persist({
-                        ...settings,
-                        quietHours: {
-                          ...quiet,
-                          end: event.target.value.slice(0, 5),
-                        },
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <div className="day-pills">
-                {WEEKDAYS.map((label, day) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className={quiet.days.includes(day) ? "is-on" : undefined}
-                    onClick={() => toggleDay(day)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <p className="hint">
-                Overnight ranges are valid. Friday 22:00 runs through Saturday
-                08:00 even if Saturday is unchecked. Tray still turns red; toasts
-                wait for a digest unless Always alert is on.
-              </p>
-              {active ? (
-                <p className="hint">Quiet hours are active now.</p>
-              ) : null}
-            </fieldset>
-          ) : null}
-        </section>
       </div>
     </main>
   );

@@ -24,20 +24,11 @@ description = "Delete keychain items, history, config row, and abort the poller 
 commands.allow = ["delete_service"]
 
 [[permission]]
-identifier = "allow-poller-dead"
-description = "Read whether the poller watchdog is in poller_dead."
-commands.allow = ["poller_dead"]
+identifier = "allow-save-service"
+description = "Persist a service draft and request notification permission on first notify-enabled save."
+commands.allow = ["save_service"]
 
 [[permission]]
-identifier = "allow-quit"
-description = "Quit the app from the popover footer."
-commands.allow = ["quit"]
-
-[[permission]]
-identifier = "allow-open-action"
-description = "Open the selected service action URL or health URL."
-commands.allow = ["open_action"]
-
 identifier = "allow-get-detail"
 description = "Load evidence, last result, and 24h samples for the detail window."
 commands.allow = ["get_detail"]
@@ -56,29 +47,8 @@ commands.allow = ["open_action"]
 identifier = "allow-open-detail"
 description = "Create or focus the detail window and hide the popover."
 commands.allow = ["open_detail"]
-identifier = "allow-save-service"
-description = "Persist a service draft and request notification permission on first notify-enabled save."
-commands.allow = ["save_service"]
 
 [[permission]]
-identifier = "allow-get-settings"
-description = "Read persisted AppSettings."
-commands.allow = ["get_settings"]
-
-[[permission]]
-identifier = "allow-update-settings"
-description = "Persist AppSettings and flush the quiet queue if the window ended."
-commands.allow = ["update_settings"]
-
-[[permission]]
-identifier = "allow-open-settings"
-description = "Create or focus the settings window."
-commands.allow = ["open_settings"]
-
-[[set]]
-identifier = "allow-settings"
-description = "Settings window: load and save preferences including quiet hours."
-permissions = ["allow-get-settings", "allow-update-settings"]
 identifier = "allow-poller-dead"
 description = "Read whether the poller watchdog is in poller_dead."
 commands.allow = ["poller_dead"]
@@ -97,12 +67,12 @@ permissions = [
     "allow-check-now",
     "allow-check-all",
     "allow-delete-service",
-    "allow-poller-dead",
-    "allow-quit",
-    "allow-open-action",
+    "allow-save-service",
     "allow-open-action",
     "allow-snooze",
     "allow-open-settings",
+    "allow-poller-dead",
+    "allow-quit",
 ]
 
 [[set]]

@@ -21,6 +21,7 @@ pub fn open_editor(app: &AppHandle, id: Option<String>) -> Result<(), String> {
     };
 
     if let Some(existing) = app.get_webview_window(EDITOR_LABEL) {
+        become_regular(app);
         let _ = existing.set_title(title);
         let _ = existing.emit("pulse://editor-target", &target);
         let _ = existing.unminimize();
@@ -29,11 +30,7 @@ pub fn open_editor(app: &AppHandle, id: Option<String>) -> Result<(), String> {
         return Ok(());
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        // Accessory apps do not raise new windows unless we go Regular first.
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    }
+    become_regular(app);
 
     let mut path = String::from("index.html?surface=editor");
     if let Some(id) = &id {
@@ -75,6 +72,16 @@ pub fn on_window_event<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tau
     if matches!(event, tauri::WindowEvent::Destroyed) {
         restore_accessory_if_idle(window.app_handle());
     }
+}
+
+/// Accessory apps do not raise utility windows unless we become Regular first.
+pub fn become_regular<R: tauri::Runtime>(app: &AppHandle<R>) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 fn restore_accessory_if_idle<R: tauri::Runtime>(app: &AppHandle<R>) {

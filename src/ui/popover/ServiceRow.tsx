@@ -45,13 +45,15 @@ export function ServiceRow({
           onOpen(view.id);
         }}
       >
-        <StatusMark tone={markState(view)} dim={paused} />
-        <span className="name">{view.name}</span>
-        <StatusPill tone={tone}>{label}</StatusPill>
-        <span className="meta">
-          {time ? <span>{time}</span> : null}
-          {snooze ? <StatusPill tone="snooze">{snooze}</StatusPill> : null}
+        <StatusMark tone={markState(view)} dim={paused} checking={checking} />
+        <span className="svc-main">
+          <span className="name">{view.name}</span>
+          <span className="meta">
+            {time ? <span>{time}</span> : null}
+            {snooze ? <StatusPill tone="snooze">{snooze}</StatusPill> : null}
+          </span>
         </span>
+        <StatusPill tone={tone}>{label}</StatusPill>
       </button>
     </li>
   );

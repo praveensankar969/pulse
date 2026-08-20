@@ -25,8 +25,14 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and the static prototype
+      ignored: ["**/src-tauri/**", "**/proto/**"],
     },
+  },
+
+  // The static prototype has its own index.html. If Vite crawls it, esbuild
+  // treats proto as a second app entry and the scan can fail or pre-bundle junk.
+  optimizeDeps: {
+    entries: ["index.html"],
   },
 }));

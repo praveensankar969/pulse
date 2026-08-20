@@ -208,17 +208,7 @@ export async function startStore(): Promise<() => void> {
       }),
     );
     unlisten.push(await ipc.bindBlurProtocol());
-    try {
-      const settings = await ipc.getSettings();
-      applyTheme(settings.theme);
-      unlisten.push(
-        await ipc.onSettings((next) => {
-          applyTheme(next.theme);
-        }),
-      );
-    } catch {
-      // Settings IPC is best-effort for the popover theme.
-    }
+    applyTheme();
   } catch {
     // Not running inside Tauri.
   }

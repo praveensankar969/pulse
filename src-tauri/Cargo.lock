@@ -3423,6 +3423,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "url",
+ "window-vibrancy",
  "windows-sys 0.59.0",
  "wiremock",
 ]

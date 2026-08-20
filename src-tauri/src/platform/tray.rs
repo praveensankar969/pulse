@@ -7,7 +7,7 @@ use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuEvent};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Listener, LogicalPosition, Manager, PhysicalPosition, Position, Size, State,
+    AppHandle, Emitter, Listener, LogicalPosition, Manager, PhysicalPosition, Position, Size, State,
     WebviewWindow,
 };
 
@@ -17,12 +17,14 @@ use crate::ipc::AppState;
 pub const SUPPRESS_BLUR_MS: u64 = 250;
 pub const WORK_AREA_INSET: i32 = 12;
 
-const OK: [u8; 3] = [0x3d, 0xdc, 0x97];
-const WARN: [u8; 3] = [0xf5, 0xb9, 0x42];
-const DANGER: [u8; 3] = [0xf0, 0x53, 0x4a];
-const MUTED: [u8; 3] = [0x6b, 0x73, 0x80];
-const SLASH_OFFLINE: [u8; 3] = [0xc8, 0xcd, 0xd6];
+const OK: [u8; 3] = [0x36, 0xa1, 0x5a];
+const WARN: [u8; 3] = [0xd4, 0xa0, 0x2a];
+const DANGER: [u8; 3] = [0xe2, 0x4b, 0x3c];
+const MUTED: [u8; 3] = [0xc7, 0xc7, 0xcc];
+const SLASH_OFFLINE: [u8; 3] = [0x8e, 0x8e, 0x93];
 const WHITE: [u8; 3] = [0xff, 0xff, 0xff];
+const HALO_LIGHT: [u8; 3] = [0xff, 0xff, 0xff];
+const HALO_DARK: [u8; 3] = [0x1d, 0x1d, 0x1f];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayMark {
@@ -375,6 +377,7 @@ pub fn install<R: tauri::Runtime>(app: &AppHandle<R>, tray: TrayHandle) -> tauri
     });
 
     if let Some(popover) = app.get_webview_window("popover") {
+        crate::platform::overlay::allow_over_fullscreen(&popover);
         let blur_tray = tray.clone();
         let hide = popover.clone();
         popover.on_window_event(move |event| match event {
@@ -550,6 +553,7 @@ fn apply_visibility<R: tauri::Runtime>(
     let Some(window) = app.get_webview_window("popover") else {
         return;
     };
+    crate::platform::overlay::allow_over_fullscreen(&window);
     let visible = window.is_visible().unwrap_or(false);
     if show_only {
         if !visible {
@@ -558,7 +562,9 @@ fn apply_visibility<R: tauri::Runtime>(
                 _ => place_work_area_fallback(&window),
             }
             let _ = window.show();
+            crate::platform::overlay::order_front(&window);
             let _ = window.set_focus();
+            let _ = window.emit("pulse://popover-shown", ());
         }
         return;
     }
@@ -571,7 +577,9 @@ fn apply_visibility<R: tauri::Runtime>(
         _ => place_work_area_fallback(&window),
     }
     let _ = window.show();
+    crate::platform::overlay::order_front(&window);
     let _ = window.set_focus();
+    let _ = window.emit("pulse://popover-shown", ());
 }
 
 fn place_popover<R: tauri::Runtime>(window: &WebviewWindow<R>, rect: &tauri::Rect) {
@@ -744,59 +752,185 @@ fn logical_1x() -> f32 {
     }
 }
 
-/// Geometric circle. `logical_1x` is 18 (mac) or 16 (win).
+/// Dual rounded squares — same mark as the landing favicon / menu extra.
+/// `logical_1x` is 18 (mac) or 16 (win).
 pub fn paint_mark(mark: TrayMark, size: u32, logical_1x: f32) -> Vec<u8> {
     let mut px = vec![0u8; size as usize * size as usize * 4];
     let scale = size as f32 / logical_1x;
+    let side = 7.2 * scale;
+    let offset = 5.0 * scale;
+    let radius = 1.6 * scale;
+    let total_w = offset + side;
+    let x0 = (size as f32 - total_w) / 2.0;
+    let y0 = (size as f32 - side) / 2.0;
+    let stroke = 1.35 * scale;
     let cx = size as f32 / 2.0;
     let cy = size as f32 / 2.0;
-    let radius = 4.0 * scale;
-    let stroke = 1.5 * scale;
     let slash_half = 6.0 * scale;
     let slash_w = 0.75 * scale;
 
+    glass_halo(&mut px, size, x0, y0, total_w, side, radius, scale);
+
     match mark {
-        TrayMark::Healthy => fill_circle(&mut px, size, cx, cy, radius, OK),
-        TrayMark::Degraded => fill_circle(&mut px, size, cx, cy, radius, WARN),
+        TrayMark::Healthy => fill_pair(&mut px, size, x0, y0, side, offset, radius, OK),
+        TrayMark::Degraded => fill_pair(&mut px, size, x0, y0, side, offset, radius, WARN),
         TrayMark::Down { count } => {
-            fill_circle(&mut px, size, cx, cy, radius, DANGER);
+            fill_pair(&mut px, size, x0, y0, side, offset, radius, DANGER);
             if count > 0 {
                 draw_badge(&mut px, size, scale, count);
             }
         }
-        TrayMark::Hollow => ring_circle(&mut px, size, cx, cy, radius, stroke, MUTED),
+        TrayMark::Hollow => stroke_pair(&mut px, size, x0, y0, side, offset, radius, stroke, MUTED),
         TrayMark::Offline => {
-            fill_circle(&mut px, size, cx, cy, radius, MUTED);
+            fill_pair(&mut px, size, x0, y0, side, offset, radius, MUTED);
             draw_slash(&mut px, size, cx, cy, slash_half, slash_w, SLASH_OFFLINE);
         }
         TrayMark::PollerDead => {
-            ring_circle(&mut px, size, cx, cy, radius, stroke, DANGER);
+            stroke_pair(
+                &mut px, size, x0, y0, side, offset, radius, stroke, DANGER,
+            );
             draw_slash(&mut px, size, cx, cy, slash_half, slash_w, DANGER);
         }
     }
     px
 }
 
-fn fill_circle(px: &mut [u8], size: u32, cx: f32, cy: f32, radius: f32, rgb: [u8; 3]) {
-    for y in 0..size {
-        for x in 0..size {
-            let cover = circle_cover(x, y, cx, cy, radius);
+/// White then ink ring so the mark reads on light and dark menu-bar glass.
+fn glass_halo(
+    px: &mut [u8],
+    size: u32,
+    x0: f32,
+    y0: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    scale: f32,
+) {
+    let outer = 1.4 * scale;
+    let inner = 0.7 * scale;
+    stroke_round_rect(
+        px,
+        size,
+        x0 - outer,
+        y0 - outer,
+        w + outer * 2.0,
+        h + outer * 2.0,
+        radius + outer,
+        outer - inner + 0.35 * scale,
+        HALO_LIGHT,
+        0.70,
+    );
+    stroke_round_rect(
+        px,
+        size,
+        x0 - inner,
+        y0 - inner,
+        w + inner * 2.0,
+        h + inner * 2.0,
+        radius + inner,
+        0.7 * scale,
+        HALO_DARK,
+        0.22,
+    );
+}
+
+fn fill_pair(
+    px: &mut [u8],
+    size: u32,
+    x0: f32,
+    y0: f32,
+    side: f32,
+    offset: f32,
+    radius: f32,
+    rgb: [u8; 3],
+) {
+    fill_round_rect(px, size, x0, y0, side, side, radius, rgb, 1.0);
+    fill_round_rect(px, size, x0 + offset, y0, side, side, radius, rgb, 0.38);
+}
+
+fn stroke_pair(
+    px: &mut [u8],
+    size: u32,
+    x0: f32,
+    y0: f32,
+    side: f32,
+    offset: f32,
+    radius: f32,
+    stroke: f32,
+    rgb: [u8; 3],
+) {
+    stroke_round_rect(px, size, x0, y0, side, side, radius, stroke, rgb, 1.0);
+    stroke_round_rect(
+        px,
+        size,
+        x0 + offset,
+        y0,
+        side,
+        side,
+        radius,
+        stroke,
+        rgb,
+        0.38,
+    );
+}
+
+fn fill_round_rect(
+    px: &mut [u8],
+    size: u32,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    rgb: [u8; 3],
+    alpha: f32,
+) {
+    let xmin = x.floor().max(0.0) as u32;
+    let ymin = y.floor().max(0.0) as u32;
+    let xmax = (x + w).ceil().min(size as f32) as u32;
+    let ymax = (y + h).ceil().min(size as f32) as u32;
+    for py in ymin..ymax {
+        for px_i in xmin..xmax {
+            let cover = round_rect_cover(px_i, py, x, y, w, h, radius) * alpha;
             if cover > 0.0 {
-                blend(pixel(px, size, x, y), rgb, cover);
+                blend(pixel(px, size, px_i, py), rgb, cover);
             }
         }
     }
 }
 
-fn ring_circle(px: &mut [u8], size: u32, cx: f32, cy: f32, radius: f32, stroke: f32, rgb: [u8; 3]) {
-    let inner = (radius - stroke).max(0.0);
-    for y in 0..size {
-        for x in 0..size {
-            let outer = circle_cover(x, y, cx, cy, radius);
-            let hole = circle_cover(x, y, cx, cy, inner);
-            let cover = (outer - hole).clamp(0.0, 1.0);
+fn stroke_round_rect(
+    px: &mut [u8],
+    size: u32,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    stroke: f32,
+    rgb: [u8; 3],
+    alpha: f32,
+) {
+    let inner = stroke.max(0.6);
+    let xmin = x.floor().max(0.0) as u32;
+    let ymin = y.floor().max(0.0) as u32;
+    let xmax = (x + w).ceil().min(size as f32) as u32;
+    let ymax = (y + h).ceil().min(size as f32) as u32;
+    for py in ymin..ymax {
+        for px_i in xmin..xmax {
+            let outer = round_rect_cover(px_i, py, x, y, w, h, radius);
+            let hole = round_rect_cover(
+                px_i,
+                py,
+                x + inner,
+                y + inner,
+                (w - inner * 2.0).max(0.0),
+                (h - inner * 2.0).max(0.0),
+                (radius - inner).max(0.0),
+            );
+            let cover = (outer - hole).clamp(0.0, 1.0) * alpha;
             if cover > 0.0 {
-                blend(pixel(px, size, x, y), rgb, cover);
+                blend(pixel(px, size, px_i, py), rgb, cover);
             }
         }
     }
@@ -904,13 +1038,6 @@ fn fill_rect(px: &mut [u8], size: u32, x0: f32, y0: f32, w: f32, h: f32, rgb: [u
             }
         }
     }
-}
-
-fn circle_cover(x: u32, y: u32, cx: f32, cy: f32, radius: f32) -> f32 {
-    let dx = x as f32 + 0.5 - cx;
-    let dy = y as f32 + 0.5 - cy;
-    let dist = (dx * dx + dy * dy).sqrt();
-    (radius + 0.5 - dist).clamp(0.0, 1.0)
 }
 
 fn round_rect_cover(x: u32, y: u32, rx: f32, ry: f32, w: f32, h: f32, radius: f32) -> f32 {
@@ -1238,13 +1365,14 @@ mod tests {
             let rgba = paint_mark(TrayMark::Healthy, size, logical);
             assert_eq!(rgba.len(), (size * size * 4) as usize);
             let i = ((size / 2 * size + size / 2) * 4) as usize;
-            assert!(rgba[i + 3] > 200, "center filled");
+            assert!(rgba[i + 3] > 200, "pair overlap filled");
             assert!(rgba[i + 1] > rgba[i], "ok green");
         }
 
         let hollow = paint_mark(TrayMark::Hollow, 36, 18.0);
-        let c = ((18 * 36 + 18) * 4) as usize;
-        assert!(hollow[c + 3] < 40, "hollow center empty");
+        // Interior of the left square (not the overlapping seam).
+        let c = ((18 * 36 + 13) * 4) as usize;
+        assert!(hollow[c + 3] < 40, "hollow left square empty");
 
         let dead = paint_mark(TrayMark::PollerDead, 36, 18.0);
         assert!(dead.chunks(4).any(|p| p[0] > 180 && p[3] > 180));

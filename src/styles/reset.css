@@ -11,11 +11,26 @@ body,
   height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: -0.012em;
   background: var(--bg-1);
   color: var(--text-0);
   overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.popover,
+html.popover body,
+html.popover #root {
+  background: transparent;
 }
 
 button,

@@ -24,6 +24,8 @@ pub fn open_detail<R: tauri::Runtime>(app: &AppHandle<R>, id: &str) -> Result<()
         let _ = popover.hide();
     }
 
+    crate::ipc::windows::become_regular(app);
+
     if let Some(existing) = app.get_webview_window(DETAIL_LABEL) {
         let _ = existing.emit("pulse://detail-service", DetailId { id: id.to_string() });
         let _ = existing.unminimize();

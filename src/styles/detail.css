@@ -20,7 +20,8 @@
 .detail-head h1 {
   margin: 0 0 4px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.015em;
 }
 
 .detail-status {
@@ -54,11 +55,24 @@
   font-variant-numeric: tabular-nums;
   font-family: var(--mono);
   color: var(--text-0);
-  overflow-wrap: anywhere;
 }
 
 .kv dd.url {
   color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.time-ago {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.time-ago-rel {
+  display: inline-block;
+  min-width: 8ch;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
 }
 
 .assert-table {
@@ -73,7 +87,7 @@
 .assert-table td {
   text-align: left;
   padding: 5px 6px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0.5px solid var(--hair);
   overflow-wrap: anywhere;
 }
 
@@ -114,8 +128,8 @@
 
 .preview {
   background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-family: var(--mono);
   font-size: 11px;
@@ -209,8 +223,8 @@
 
 .secret-mask {
   background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: 0.5px solid var(--hair);
+  border-radius: 7px;
   padding: 2px 8px;
   color: var(--text-1);
   letter-spacing: 0.12em;
@@ -219,7 +233,7 @@
 }
 
 .secret-mask:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
 }
 
 .secret-mask.revealed {
@@ -227,98 +241,24 @@
   color: var(--text-0);
 }
 
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  display: inline-block;
-}
-
-.dot.healthy {
-  background: var(--ok);
-}
-
-.dot.slow,
-.dot.degraded {
-  background: var(--warn);
-}
-
-.dot.down {
-  background: var(--down);
-}
-
-.dot.paused,
-.dot.pending {
-  background: transparent;
-  border: 1.2px solid var(--muted);
-}
-
-.dot.is-dim {
-  opacity: 0.4;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  border: 1px solid transparent;
-}
-
-.pill.down {
-  color: var(--down);
-  background: var(--down-bg);
-  border-color: color-mix(in srgb, var(--down) 35%, transparent);
-}
-
-.pill.slow,
-.pill.degraded {
-  color: var(--warn);
-  background: var(--warn-bg);
-  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
-}
-
-.pill.healthy {
-  color: var(--ok);
-  background: var(--ok-bg);
-  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-}
-
-.pill.paused,
-.pill.pending {
-  color: var(--text-1);
-  background: var(--muted-bg);
-  border-color: var(--border);
-}
-
-.pill.snooze {
-  color: var(--text-1);
-  background: var(--bg-2);
-  border-color: var(--border);
-  font-variant-numeric: tabular-nums;
-}
-
 .btn {
-  border: 1px solid var(--border);
-  background: var(--bg-2);
+  appearance: none;
+  border: 0;
+  background: color-mix(in srgb, var(--text-0) 6%, transparent);
   color: var(--text-0);
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 6px 10px;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.btn:hover {
-  background: #262c38;
+.btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-0) 12%, transparent);
 }
 
 .btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -328,14 +268,13 @@
 }
 
 .btn.primary {
-  background: var(--accent);
-  border-color: transparent;
-  color: #0b1220;
-  font-weight: 600;
+  background: var(--text-0);
+  color: var(--bg-1);
 }
 
-.btn.primary:hover {
-  filter: brightness(1.06);
+.btn.primary:hover:not(:disabled) {
+  filter: none;
+  background: var(--text-0);
 }
 
 .snooze-wrap {
@@ -347,13 +286,13 @@
   left: 0;
   bottom: calc(100% + 4px);
   min-width: 180px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--bg-0);
+  border: 0.5px solid var(--hair);
+  border-radius: var(--radius-sm);
   padding: 4px;
   display: grid;
   z-index: 2;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow);
 }
 
 .snooze-menu button {
@@ -369,5 +308,5 @@
 
 .snooze-menu button:hover,
 .snooze-menu button:focus-visible {
-  background: #262c38;
+  background: var(--hover);
 }

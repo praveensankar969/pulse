@@ -5,21 +5,6 @@ import type {
   AppSettings,
   CheckEvidence,
   CheckResult,
-  ServiceDraft,
-  ServiceView,
-} from "./types";
-import type { AppSettings, CheckResult, ServiceView } from "./types";
-
-export type FocusServicePayload = { id?: string };
-export type PollerDeadPayload = { at: string };
-export type OfflinePayload = { offline: boolean };
-
-export async function listServices(): Promise<ServiceView[]> {
-  return invoke<ServiceView[]>("list_services");
-import type {
-  AppSettings,
-  CheckResult,
-  DetailPayload,
   DetailPayload,
   ServiceDraft,
   ServiceView,
@@ -187,35 +172,6 @@ export async function onEditorTarget(
   return listen<{ id?: string }>("pulse://editor-target", (event) => {
     handler(event.payload);
   });
-export async function openDetail(id: string): Promise<void> {
-  try {
-    await invoke("open_detail", { id });
-  } catch {
-    await emit("pulse://open-detail", { id });
-  }
-}
-
-export async function openEditor(id: string): Promise<void> {
-  await emit("pulse://open-editor", { id });
-}
-
-export async function beginReveal(
-  id: string,
-  headerKey: string,
-): Promise<BeginReveal> {
-  return invoke<BeginReveal>("begin_reveal", { id, headerKey });
-}
-
-export async function revealSecret(
-  id: string,
-  headerKey: string,
-  token: string,
-): Promise<string> {
-  return invoke<string>("reveal_secret", { id, headerKey, token });
-}
-
-export async function endReveal(token: string): Promise<void> {
-  await invoke("end_reveal", { token });
 }
 
 export async function onServices(
@@ -274,6 +230,12 @@ export async function onAskLaunchAtLogin(
   });
 }
 
+export async function onPopoverShown(handler: () => void): Promise<UnlistenFn> {
+  return listen("pulse://popover-shown", () => {
+    handler();
+  });
+}
+
 export function bindBlurProtocol(): Promise<UnlistenFn> {
   return getCurrentWindow().onFocusChanged(async ({ payload: focused }) => {
     if (focused) return;
@@ -283,18 +245,5 @@ export function bindBlurProtocol(): Promise<UnlistenFn> {
     } catch {
       // Window hide is best-effort; Rust also applies the same protocol.
     }
-export async function onDetailService(
-  handler: (id: string) => void,
-): Promise<UnlistenFn> {
-  return listen<{ id: string }>("pulse://detail-service", (event) => {
-    if (event.payload.id) handler(event.payload.id);
-  });
-}
-
-export async function onSettings(
-  handler: (settings: AppSettings) => void,
-): Promise<UnlistenFn> {
-  return listen<AppSettings>("pulse://settings", (event) => {
-    handler(event.payload);
   });
 }

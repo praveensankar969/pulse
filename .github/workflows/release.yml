@@ -10,97 +10,31 @@ permissions:
 
 jobs:
   release:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            rust_targets: aarch64-apple-darwin
-            args: --target aarch64-apple-darwin --bundles app,dmg
-          - platform: macos-latest
-            rust_targets: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin --bundles app,dmg
-          - platform: windows-latest
-            rust_targets: ""
-            args: --bundles nsis
-
-    runs-on: ${{ matrix.platform }}
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_targets }}
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./src-tauri -> target"
-
-      - name: Install JS dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Ad-hoc sign macOS when no Apple identity is configured
-        if: runner.os == 'macOS'
-        run: |
-          if [ -z "${APPLE_CERTIFICATE}" ] && [ -z "${APPLE_SIGNING_IDENTITY}" ]; then
-            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
-          fi
-
-      - name: Enable updater artifacts when a signing key is present
-        shell: bash
-        run: |
-          if [ -n "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
-            printf '%s\n' '{"bundle":{"createUpdaterArtifacts":true}}' > updater-artifacts.conf.json
-          else
-            printf '%s\n' '{"bundle":{"createUpdaterArtifacts":false}}' > updater-artifacts.conf.json
-          fi
-          cp updater-artifacts.conf.json src-tauri/updater-artifacts.conf.json
-
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Pulse ${{ github.ref_name }}
-          releaseBody: |
-            Pulse — Service Monitor
-
-            Direct download from GitHub Releases only. No Mac App Store or Microsoft Store package.
-
-            - macOS: notarized `.dmg` when Apple secrets are set; otherwise unsigned (right-click → Open).
-            - Windows: NSIS `.exe`. SmartScreen will warn until Authenticode is configured.
-            - Updater is **off** in this binary (`updater` Cargo feature is not enabled).
-          releaseDraft: true
-          prerelease: false
-          updaterJsonPreferNsis: true
-          args: ${{ matrix.args }} --config updater-artifacts.conf.json
-
-  # fail-fast is false so a red Windows/Intel job still finishes the other
-  # artifacts, but do not publish Latest until every matrix cell is green.
-  publish:
-    needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Publish GitHub Release
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"
+        run: |
+          tag="${{ github.ref_name }}"
+          notes="$(cat <<EOF
+          Pulse ${tag} for Mac (Apple silicon).
+
+          Unsigned build. After unzipping:
+
+          1. Right-click Pulse.app → Open
+          2. Confirm Open
+          3. On the first secret check, choose Always Allow for Keychain
+
+          Attach **Pulse.app.zip** (from \`pnpm tauri build --bundles app\`) to this release. The website Download button uses the latest zip on this release.
+
+          Privacy: https://github.com/${{ github.repository }}/blob/main/docs/privacy.html
+          Terms: https://github.com/${{ github.repository }}/blob/main/docs/terms.html
+          EOF
+          )"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "Pulse ${tag}" --notes "$notes" --latest
+          else
+            gh release create "$tag" --title "Pulse ${tag}" --notes "$notes" --latest
+          fi

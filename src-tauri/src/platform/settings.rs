@@ -7,6 +7,7 @@ pub const SETTINGS_WIDTH: f64 = 440.0;
 pub const SETTINGS_HEIGHT: f64 = 560.0;
 
 pub fn open_settings<R: tauri::Runtime>(app: &AppHandle<R>) {
+    crate::ipc::windows::become_regular(app);
     if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
         let _ = window.unminimize();
         let _ = window.show();

@@ -96,7 +96,7 @@ describe("relativeTime / snoozeRemaining", () => {
       downSince: "2026-08-18T14:00:00Z",
       downClockAdjustMs: 4 * 60_000,
     });
-    expect(relativeTime(down, NOW, false)).toBe("down 6m");
+    expect(relativeTime(down, NOW, false)).toBe("down 06m");
   });
 
   it("uses degradedSince, not lastCheckAt, for degraded 3m", () => {
@@ -107,7 +107,7 @@ describe("relativeTime / snoozeRemaining", () => {
       degradedSince: "2026-08-18T14:07:00Z",
       lastResult: result({ outcome: "soft", errorKind: "slow", state: "degraded" }),
     });
-    expect(relativeTime(degraded, NOW, false)).toBe("degraded 3m");
+    expect(relativeTime(degraded, NOW, false)).toBe("degraded 03m");
   });
 
   it("formats healthy last-check age", () => {

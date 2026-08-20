@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy · Pulse</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='10' width='12' height='12' rx='2.4' fill='%2336a15a'/%3E%3Crect x='16' y='10' width='12' height='12' rx='2.4' fill='%2336a15a' opacity='.38'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="site.css" />
+</head>
+<body>
+  <header class="top">
+    <a class="wordmark" href="index.html"><span class="logo-glyph" aria-hidden="true"></span>Pulse</a>
+    <a href="index.html">Home</a>
+  </header>
+  <article>
+    <h1>Privacy</h1>
+    <p class="lede">Effective 19 August 2026</p>
+    <p>Pulse is a local menu-bar health monitor. It does not create an account, talk to our servers, or send telemetry.</p>
+
+    <h2>What the app stores on your Mac</h2>
+    <p>Service names, URLs, intervals, and last-check history live in <code>~/Library/Application Support/dev.pulsebar.app/</code> (typically <code>config.json</code>, <code>services.json</code>, <code>history.sqlite3</code>, and <code>logs/pulse.log</code>). Secret header values are written to the macOS Keychain, not to those files.</p>
+
+    <h2>What leaves the machine</h2>
+    <p>When you add a check, Pulse makes HTTP(S) requests to the URL you typed. That host sees the request (method, path, headers you configured, and your IP) the same way it would from any client. We do not see those requests. Pulse does not phone home.</p>
+
+    <h2>This website and downloads</h2>
+    <p>The marketing site is GitHub Pages. Installers are GitHub Releases. Those HTTP requests are handled by GitHub, under GitHub’s privacy policy. They are not processed by the Pulse app.</p>
+
+    <h2>Logs</h2>
+    <p>Local logs are redacted for header values. They stay on disk unless you copy them somewhere.</p>
+
+    <h2>Contact</h2>
+    <p>Questions: <a href="https://github.com/pulsebar/pulse/issues">github.com/pulsebar/pulse/issues</a>.</p>
+  </article>
+  <p class="foot"><a href="index.html">Pulse</a> · <a href="terms.html">Terms</a> · Local-only / no telemetry</p>
+</body>
+</html>
