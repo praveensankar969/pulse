@@ -38,10 +38,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": ["dmg"],
     "createUpdaterArtifacts": false,
     "publisher": "Pulse",
-    "homepage": "https://github.com/pulsebar/pulse",
+    "homepage": "https://github.com/praveensankar969/pulse",
     "shortDescription": "Pulse — Service Monitor",
     "longDescription": "Local menu-bar health monitor for HTTP endpoints you own.",
     "category": "Utility",
@@ -55,10 +55,13 @@
     "macOS": {
       "hardenedRuntime": true,
       "minimumSystemVersion": "10.15",
+      "signingIdentity": "-",
       "dmg": {
-        "appPosition": { "x": 180, "y": 170 },
-        "applicationFolderPosition": { "x": 480, "y": 170 },
-        "windowSize": { "width": 660, "height": 400 }
+        "background": "dmg/background.png",
+        "windowPosition": { "x": 240, "y": 140 },
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 168, "y": 188 },
+        "applicationFolderPosition": { "x": 492, "y": 188 }
       }
     },
     "windows": {
@@ -77,7 +80,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFNkQyN0JBNjNENDdBRTcKUldUbmV0Ump1aWR0WGdoQ2xlK2NnNFp6UjhYc2tHNnc5THg5NWdYT0VTTml2MUlhTURnQkp6dnQK",
       "endpoints": [
-        "https://github.com/pulsebar/pulse/releases/latest/download/latest.json"
+        "https://github.com/praveensankar969/pulse/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

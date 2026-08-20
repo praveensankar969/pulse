@@ -21,16 +21,17 @@ jobs:
           notes="$(cat <<EOF
           Pulse ${tag} for Mac (Apple silicon).
 
-          Unsigned build. After unzipping:
+          Unsigned — no Apple Developer ID. Source: this repository.
 
-          1. Right-click Pulse.app → Open
-          2. Confirm Open
-          3. On the first secret check, choose Always Allow for Keychain
+          1. Open the DMG and drag Pulse.app to Applications
+          2. In Terminal:
+             \`xattr -cr /Applications/Pulse.app\`
+          3. Open Pulse. On the first secret check, choose Always Allow for Keychain
 
-          Attach **Pulse.app.zip** (from \`pnpm tauri build --bundles app\`) to this release. The website Download button uses the latest zip on this release.
+          Attach **Pulse_*_aarch64.dmg** (from \`pnpm tauri build --bundles dmg\`) to this release. The website Download button uses the latest .dmg on this release.
 
-          Privacy: https://github.com/${{ github.repository }}/blob/main/docs/privacy.html
-          Terms: https://github.com/${{ github.repository }}/blob/main/docs/terms.html
+          Privacy: https://github.com/${{ github.repository }}/blob/master/docs/privacy.html
+          Terms: https://github.com/${{ github.repository }}/blob/master/docs/terms.html
           EOF
           )"
           if gh release view "$tag" >/dev/null 2>&1; then

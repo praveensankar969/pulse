@@ -178,6 +178,9 @@ struct Inner {
     helpers: Mutex<Vec<AbortHandle>>,
     child_panic: Notify,
     child_panic_gen: AtomicU64,
+    /// Set when `run` starts. Sync IPC (`save_service`, `set_paused`) has no
+    /// current Tokio context; `tokio::spawn` panics there (SIGABRT in Pulse.app).
+    tokio: Mutex<Option<tokio::runtime::Handle>>,
     offline: Mutex<OfflineDetector>,
     wake_at_ms: AtomicI64,
     wake_gen: AtomicU64,
@@ -229,6 +232,7 @@ impl Scheduler {
                 helpers: Mutex::new(Vec::new()),
                 child_panic: Notify::new(),
                 child_panic_gen: AtomicU64::new(0),
+                tokio: Mutex::new(tokio::runtime::Handle::try_current().ok()),
                 offline: Mutex::new(OfflineDetector::new()),
                 wake_at_ms: AtomicI64::new(0),
                 wake_gen: AtomicU64::new(0),
@@ -248,6 +252,8 @@ impl Scheduler {
 
     /// Supervisor + watchdog. Call from a Tokio runtime.
     pub async fn run(self) {
+        *self.inner.tokio.lock().expect("tokio handle") =
+            Some(tokio::runtime::Handle::current());
         let inner = Arc::clone(&self.inner);
         let hook = Arc::clone(&inner.on_poller_dead);
         let events = Arc::clone(&inner.events);
@@ -693,11 +699,24 @@ impl Inner {
         }
     }
 
+    fn spawn_bg<F>(&self, fut: F) -> JoinHandle<()>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            return handle.spawn(fut);
+        }
+        if let Some(handle) = self.tokio.lock().expect("tokio handle lock").clone() {
+            return handle.spawn(fut);
+        }
+        tauri::async_runtime::handle().inner().spawn(fut)
+    }
+
     fn track_loop<F>(self: &Arc<Self>, fut: F)
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        let handle = tokio::spawn(fut);
+        let handle = self.spawn_bg(fut);
         self.helpers
             .lock()
             .expect("helpers lock")
@@ -707,7 +726,7 @@ impl Inner {
 
     fn watch_join(self: &Arc<Self>, handle: JoinHandle<()>) {
         let inner = Arc::clone(self);
-        tokio::spawn(async move {
+        self.spawn_bg(async move {
             if matches!(handle.await, Err(error) if error.is_panic()) {
                 inner.child_panic_gen.fetch_add(1, Ordering::SeqCst);
                 inner.child_panic.notify_waiters();
@@ -875,7 +894,7 @@ impl Inner {
         };
         let inner = Arc::clone(self);
         let task_id = id.clone();
-        let handle = tokio::spawn(async move {
+        let handle = self.spawn_bg(async move {
             inner.service_loop(task_id, delay, check_now).await;
         });
         if let Some(slot) = self.slots.lock().expect("slots lock").get_mut(&id) {
@@ -1478,6 +1497,35 @@ mod tests {
         let view = wait_state(&handle, "new", UiState::Healthy).await;
         assert_eq!(view.last_result.unwrap().evidence.http_status, Some(200));
 
+        handle.shutdown();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn upsert_from_thread_without_tokio_context_does_not_panic() {
+        let (_dir, history) = open_history();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dead_tx, _dead_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, task) = start(
+            vec![],
+            history,
+            Arc::new(SecretStore::for_test()),
+            Arc::new(ChannelEvents {
+                services: tx,
+                dead: dead_tx,
+            }),
+        );
+        let handle2 = handle.clone();
+        tokio::task::spawn_blocking(move || {
+            handle2.upsert(sample(
+                "offthread",
+                "https://example.test/health".into(),
+                60,
+            ));
+        })
+        .await
+        .expect("upsert from a sync IPC-like thread must not panic");
+        assert!(handle.view("offthread").is_ok());
         handle.shutdown();
         let _ = task.await;
     }

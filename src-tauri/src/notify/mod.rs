@@ -1,4 +1,6 @@
 mod copy;
+#[cfg(target_os = "macos")]
+mod macos;
 pub mod os;
 mod quiet;
 

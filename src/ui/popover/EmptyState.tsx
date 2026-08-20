@@ -7,8 +7,10 @@ export function EmptyState({ onAdd }: Props) {
     <div className="empty-state">
       <p>Add the HTTP endpoints you own. Pulse will watch them from the tray.</p>
       <p className="empty-hint">
-        macOS will ask Pulse to use the keychain — choose Always Allow.
+        Unsigned build. Source: github.com/praveensankar969/pulse. If macOS
+        blocked Pulse, run this, then open it. Keychain: Always Allow.
       </p>
+      <pre className="empty-cmd">xattr -cr /Applications/Pulse.app</pre>
       <button type="button" className="btn primary" onClick={onAdd}>
         Add service
       </button>

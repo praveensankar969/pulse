@@ -336,6 +336,56 @@ export function padSparkline(points: SparkPoint[]): SparkPoint[] {
   return [...Array<SparkPoint>(24 - points.length).fill("gap"), ...points];
 }
 
+export const SPARKLINE_WIDTH = 220;
+export const SPARKLINE_HEIGHT = 28;
+
+/** Oldest → newest, at most 24 samples. */
+export function last24Samples(samples: CompactSample[]): CompactSample[] {
+  return samples
+    .filter((sample) => !Number.isNaN(Date.parse(sample.at)))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+    .slice(-24);
+}
+
+/**
+ * Latency polyline for the last 24 checks. Missing `latencyMs` breaks the
+ * path (a gap). Domain is `[0, maxLatency * 1.2]` so a tight healthy run
+ * does not sit on the ceiling.
+ */
+export function sparklinePath(
+  samples: CompactSample[],
+  width = SPARKLINE_WIDTH,
+  height = SPARKLINE_HEIGHT,
+): string {
+  const last = last24Samples(samples);
+  const padded: Array<CompactSample | null> = [
+    ...Array<null>(Math.max(0, 24 - last.length)).fill(null),
+    ...last,
+  ];
+  const values = padded.map((sample) => {
+    const ms = sample?.latencyMs;
+    return ms != null && Number.isFinite(ms) ? ms : null;
+  });
+  const present = values.filter((ms): ms is number => ms != null);
+  if (present.length === 0) return "";
+  const yMax = Math.max(...present, 1) * 1.2;
+  const plotH = height - 2;
+  let d = "";
+  let drawing = false;
+  for (let i = 0; i < values.length; i++) {
+    const ms = values[i];
+    if (ms == null) {
+      drawing = false;
+      continue;
+    }
+    const x = (i / (values.length - 1)) * width;
+    const y = height - (ms / yMax) * plotH - 1;
+    d += `${drawing ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+    drawing = true;
+  }
+  return d;
+}
+
 export function summary(views: ServiceView[]): {
   countText: string;
   stripText: string;

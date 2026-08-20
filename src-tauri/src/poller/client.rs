@@ -12,7 +12,7 @@ use url::Url;
 use crate::domain::{ErrorKind, HttpMethod, Service};
 use crate::eval::{RawResponse, TransportError};
 
-pub const USER_AGENT: &str = "Pulse/1.0 (+https://github.com/pulsebar/pulse; local health check)";
+pub const USER_AGENT: &str = "Pulse/1.0 (+https://github.com/praveensankar969/pulse; local health check)";
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
 pub const BODY_PREVIEW_BYTES: usize = 2048;
 pub const MAX_REDIRECTS: u8 = 3;

@@ -150,6 +150,14 @@
   color: var(--text-2);
 }
 
+.spark-line {
+  display: block;
+  width: 100%;
+  height: 28px;
+  color: var(--text-0);
+  margin: 0 0 10px;
+}
+
 .spark {
   display: flex;
   align-items: flex-end;

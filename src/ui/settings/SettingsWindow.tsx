@@ -24,6 +24,9 @@ import {
 import { applyTheme } from "../../lib/theme";
 import type { AppSettings, QuietHours } from "../../lib/types";
 
+const GATEKEEPER_CMD = "xattr -cr /Applications/Pulse.app";
+const SOURCE_REPO = "github.com/praveensankar969/pulse";
+
 type Pane = "general" | "notifications" | "defaults" | "data";
 
 const PANES: Array<{ id: Pane; label: string }> = [
@@ -54,6 +57,7 @@ export function SettingsWindow() {
   const [failDraft, setFailDraft] = useState("3");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [cmdCopied, setCmdCopied] = useState(false);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -317,6 +321,30 @@ export function SettingsWindow() {
                 }}
               />
             </label>
+            <div className="unsigned-card">
+              <p className="unsigned-k">Unsigned build</p>
+              <p className="hint">
+                This copy of Pulse is not signed with an Apple Developer ID.
+                Source is public at {SOURCE_REPO}. If macOS says the app can’t
+                be opened, drag it to Applications and run:
+              </p>
+              <pre className="cmd">{GATEKEEPER_CMD}</pre>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  void navigator.clipboard
+                    ?.writeText(GATEKEEPER_CMD)
+                    .then(() => {
+                      setCmdCopied(true);
+                      window.setTimeout(() => setCmdCopied(false), 2000);
+                    })
+                    .catch(() => setCmdCopied(false));
+                }}
+              >
+                {cmdCopied ? "Copied" : "Copy command"}
+              </button>
+            </div>
           </section>
         ) : null}
         {pane === "notifications" ? (
@@ -331,6 +359,10 @@ export function SettingsWindow() {
               />
               <span>Notifications</span>
             </label>
+            <p className="hint">
+              This only unmutes Pulse. macOS must also allow banners: System
+              Settings → Notifications → Pulse → Alerts.
+            </p>
             <label className="check-row">
               <input
                 type="checkbox"

@@ -108,6 +108,32 @@ html.settings #root {
   line-height: 1.4;
 }
 
+.unsigned-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 0.5px solid var(--hair);
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+}
+
+.unsigned-k {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.cmd {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--bg-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-x: auto;
+  user-select: all;
+}
+
 .danger-text {
   color: var(--down);
 }

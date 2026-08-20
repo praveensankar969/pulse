@@ -84,7 +84,7 @@ pub fn become_regular<R: tauri::Runtime>(app: &AppHandle<R>) {
     let _ = app;
 }
 
-fn restore_accessory_if_idle<R: tauri::Runtime>(app: &AppHandle<R>) {
+pub(crate) fn restore_accessory_if_idle<R: tauri::Runtime>(app: &AppHandle<R>) {
     let any_utility = UTILITY_LABELS
         .iter()
         .any(|label| app.get_webview_window(label).is_some());

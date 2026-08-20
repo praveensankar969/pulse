@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pulse</title>
-  <meta name="pulse-github" content="pulsebar/pulse" />
-  <meta name="description" content="Local menu-bar health monitor for HTTP endpoints you own. macOS, Apple silicon, nothing leaves the machine." />
+  <title>Pulse — Menu bar HTTP health monitor for Mac</title>
+  <meta name="pulse-github" content="praveensankar969/pulse" />
+  <meta name="description" content="Pulse is a Mac menu bar app that checks HTTP endpoints you own — localhost, your LAN, or a public URL. No account, no cloud. Apple silicon, macOS 13+." />
   <link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='10' width='12' height='12' rx='2.4' fill='%2336a15a'/%3E%3Crect x='16' y='10' width='12' height='12' rx='2.4' fill='%2336a15a' opacity='.38'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -65,10 +65,211 @@
       pointer-events: none;
       z-index: 0;
     }
+    .void-glow-2 {
+      top: auto;
+      bottom: -120px;
+      left: -80px;
+      right: auto;
+      width: 560px;
+      height: 420px;
+      background: radial-gradient(ellipse at 40% 50%, oklch(38% 0.08 145 / 0.14), transparent 70%);
+      animation-duration: 38s;
+      animation-direction: alternate-reverse;
+    }
     @keyframes crawl {
       from { transform: translate3d(-28px, 6px, 0) scale(1); }
       to   { transform: translate3d(40px, 22px, 0) scale(1.05); }
     }
+
+    .dot-grid {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image: radial-gradient(circle, oklch(80% 0.02 250 / 0.16) 1px, transparent 1.2px);
+      background-size: 24px 24px;
+      animation: grid-drift 18s ease-in-out infinite alternate;
+      mask-image: radial-gradient(ellipse at 40% 28%, #000 10%, transparent 72%);
+      -webkit-mask-image: radial-gradient(ellipse at 40% 28%, #000 10%, transparent 72%);
+    }
+    @keyframes grid-drift {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(12px, 8px, 0); }
+    }
+
+    .field-scan {
+      position: fixed;
+      inset: -30%;
+      z-index: 0;
+      pointer-events: none;
+      background: conic-gradient(
+        from 0deg at 78% 16%,
+        transparent 0 86%,
+        oklch(58% 0.16 145 / 0.07) 90%,
+        transparent 95%
+      );
+      animation: scan-rot 36s linear infinite;
+      mask-image: radial-gradient(ellipse at 75% 12%, #000 0%, transparent 52%);
+      -webkit-mask-image: radial-gradient(ellipse at 75% 12%, #000 0%, transparent 52%);
+    }
+    @keyframes scan-rot {
+      to { transform: rotate(360deg); }
+    }
+
+    .hero {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      padding: 100px 48px 64px 7vw;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) min(400px, 38vw);
+      gap: 72px;
+      align-items: center;
+    }
+    .field-rings {
+      position: absolute;
+      left: 4vw;
+      top: 18%;
+      width: min(520px, 48vw);
+      aspect-ratio: 1;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .field-rings i {
+      position: absolute;
+      inset: 0;
+      border: 1px solid oklch(58% 0.16 145 / 0.11);
+      border-radius: 50%;
+      animation: ring-out 9s cubic-bezier(.15, .7, .25, 1) infinite;
+    }
+    .field-rings i:nth-child(2) { animation-delay: 3s; }
+    .field-rings i:nth-child(3) { animation-delay: 6s; }
+    @keyframes ring-out {
+      0%   { transform: scale(0.28); opacity: 0.45; }
+      70%  { opacity: 0.12; }
+      100% { transform: scale(1.08); opacity: 0; }
+    }
+    .ticks {
+      position: absolute;
+      left: 7vw;
+      bottom: 18%;
+      display: flex;
+      gap: 6px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .ticks i {
+      width: 3px;
+      height: 3px;
+      border-radius: 99px;
+      background: var(--accent);
+      opacity: 0.18;
+      animation: tick-breathe 2.4s ease-in-out infinite;
+    }
+    .ticks i:nth-child(2) { animation-delay: 0.4s; }
+    .ticks i:nth-child(3) { animation-delay: 0.8s; }
+    .ticks i:nth-child(4) { animation-delay: 1.2s; }
+    @keyframes tick-breathe {
+      0%, 100% { opacity: 0.12; transform: scale(1); }
+      40% { opacity: 0.7; transform: scale(1.6); }
+    }
+    .hero-copy {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+      max-width: 28em;
+      overflow-wrap: break-word;
+    }
+    .hero-mark {
+      display: inline-flex;
+      width: 48px;
+      height: 28px;
+      margin-bottom: 18px;
+    }
+    .hero-mark i {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--accent);
+      animation: mark-in 560ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .hero-mark i + i {
+      margin-left: -10px;
+      animation-name: mark-in-twin;
+      animation-delay: 220ms;
+    }
+    @keyframes mark-in {
+      from { opacity: 0; transform: scale(0.72) translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes mark-in-twin {
+      from { opacity: 0; transform: scale(0.72) translateY(8px); }
+      to { opacity: 0.38; transform: none; }
+    }
+    .kicker {
+      margin: 0 0 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      animation: claim-in 500ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: clamp(32px, 4.6vw, 52px);
+      font-weight: 500;
+      line-height: 1.14;
+      letter-spacing: -0.03em;
+      max-width: 18ch;
+      text-wrap: balance;
+      animation: reveal-up 700ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .lede {
+      margin: 18px 0 0;
+      font-size: 17px;
+      line-height: 1.5;
+      color: var(--fg);
+      max-width: 36ch;
+      animation: claim-in 500ms 80ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 22px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .chips li {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      animation: claim-in 500ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .chips li:nth-child(1) { animation-delay: 180ms; }
+    .chips li:nth-child(2) { animation-delay: 220ms; }
+    .chips li:nth-child(3) { animation-delay: 260ms; }
+    @keyframes reveal-up {
+      from { clip-path: inset(100% 0 0 0); opacity: 0; transform: translateY(12px); }
+      to { clip-path: inset(0 0 0 0); opacity: 1; transform: none; }
+    }
+    @keyframes claim-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+    .hero .btn-solid {
+      margin-top: 28px;
+      animation: claim-in 500ms 300ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .hero .sys {
+      margin-top: 14px;
+      animation: claim-in 500ms 340ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .hero-slot { min-height: 1px; }
 
     .menubar {
       position: fixed;
@@ -219,32 +420,44 @@
       z-index: 36;
       width: min(328px, calc(100vw - 32px));
       display: none;
-      grid-template-columns: 38px 1fr auto;
-      gap: 10px;
-      padding: 10px 12px 12px;
       border-radius: 18px;
       background: rgba(246, 246, 248, 0.9);
       backdrop-filter: blur(28px) saturate(180%);
       -webkit-backdrop-filter: blur(28px) saturate(180%);
       border: 0.5px solid rgba(255,255,255,0.7);
       box-shadow: 0 16px 40px rgba(0,0,0,0.28);
-      cursor: pointer;
-      text-align: left;
       color: var(--mac-ink);
-      appearance: none;
       font-family: var(--font-os);
     }
     .os-note.show {
-      display: grid;
+      display: block;
       animation: banner-in 180ms cubic-bezier(.22, 1, .36, 1) both;
     }
+    body:has(.js-detail-win.open) .os-note.show { display: none; }
     @keyframes banner-in {
       from { opacity: 0; transform: translateY(-12px); }
       to   { opacity: 1; transform: translateY(0); }
     }
+    .os-note-hit {
+      appearance: none;
+      display: grid;
+      grid-template-columns: 38px 1fr auto;
+      gap: 10px;
+      width: 100%;
+      margin: 0;
+      padding: 10px 12px 12px;
+      border: 0;
+      border-radius: 18px;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+    }
+    .os-note-hit:focus-visible { outline: 2px solid var(--mac-blue); outline-offset: 2px; }
     .os-app { font-size: 10px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mac-sec); }
-    .os-title { font-size: 13px; font-weight: 650; margin-top: 1px; letter-spacing: -0.01em; }
-    .os-body { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--mac-sec); margin-top: 2px; }
+    .os-title { font-size: 13px; font-weight: 650; margin-top: 1px; letter-spacing: -0.01em; display: block; }
+    .os-body { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--mac-sec); margin-top: 2px; display: block; }
     .os-time { font-size: 11px; color: var(--mac-sec); }
     .os-mark {
       width: 36px; height: 36px; border-radius: 9px;
@@ -252,7 +465,42 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.18);
     }
     .os-mark img, .pop-appico img { width: 100%; height: 100%; object-fit: cover; }
-    .os-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .os-close {
+      appearance: none;
+      position: absolute;
+      top: -7px;
+      left: -7px;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: 0;
+      border-radius: 99px;
+      background: #3a3a3c;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.28);
+      color: #fff;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease;
+    }
+    .os-note:hover .os-close,
+    .os-note:focus-within .os-close {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .os-close svg { width: 8px; height: 8px; display: block; }
+    .os-close:hover { background: #1d1d1f; }
+    .os-close:focus-visible {
+      outline: 2px solid var(--mac-blue);
+      outline-offset: 1px;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    @media (hover: none) {
+      .os-close { opacity: 1; pointer-events: auto; }
+    }
 
     .popover {
       position: fixed;
@@ -330,6 +578,7 @@
       text-align: left;
       color: var(--mac-ink);
       min-height: 44px;
+      cursor: pointer;
     }
     .svc[aria-selected="true"] .svc-row,
     .svc-row:hover { background: var(--mac-hover); }
@@ -348,16 +597,15 @@
       box-shadow: 0 0 0 3px color-mix(in oklch, var(--status-down) 18%, transparent);
     }
     .dot.mute { background: #c7c7cc; box-shadow: none; }
-    .svc-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
-    .svc-meta, .svc-age {
+    .svc-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .svc-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; line-height: 16px; }
+    .svc-meta {
+      display: flex; align-items: center; gap: 6px;
       font-family: ui-monospace, Menlo, monospace;
       font-size: 11px; color: var(--mac-sec);
+      font-variant-numeric: tabular-nums;
     }
-    .svc-right { display: flex; align-items: center; justify-content: flex-end; min-width: 92px; }
-    .svc-hover { display: none; gap: 4px; }
-    .svc-row:hover .svc-static, .svc-row:focus-visible .svc-static { display: none; }
-    .svc-row:hover .svc-hover, .svc-row:focus-visible .svc-hover { display: flex; }
-    .ghost-mini, .mini {
+    .mini {
       appearance: none; border: 0;
       background: rgba(0,0,0,0.06);
       color: var(--mac-ink);
@@ -365,11 +613,12 @@
       font-size: 11px; font-weight: 600;
       padding: 5px 8px;
       font-family: var(--font-os);
+      cursor: pointer;
     }
-    .ghost-mini:hover, .mini:hover { background: rgba(0,0,0,0.12); }
+    .mini:hover { background: rgba(0,0,0,0.12); }
     .mini.primary { background: var(--mac-ink); color: #fff; }
     .mini.primary:hover { background: #000; color: #fff; }
-    .ghost-mini:focus-visible, .mini:focus-visible { outline: 2px solid var(--mac-blue); outline-offset: 1px; }
+    .mini:focus-visible { outline: 2px solid var(--mac-blue); outline-offset: 1px; }
     .spill {
       display: inline-flex; align-items: center;
       font-size: 10px; font-weight: 650;
@@ -380,31 +629,6 @@
     .spill-warn { background: color-mix(in oklch, var(--status-warn) 22%, #fff); color: #8a5a00; }
     .spill-down { background: color-mix(in oklch, var(--status-down) 18%, #fff); color: #9b1c1c; }
     .spill-mute { background: #ececee; color: #6e6e73; }
-    .svc-detail {
-      padding: 0 14px 12px 36px;
-      display: grid; gap: 6px;
-    }
-    .ev {
-      display: flex; justify-content: space-between; gap: 12px;
-      font-size: 11px; color: var(--mac-sec);
-    }
-    .ev b { font-weight: 550; color: var(--mac-ink); font-family: ui-monospace, Menlo, monospace; }
-    .spark { width: 100%; height: 28px; color: var(--mac-ink); margin-top: 4px; }
-    .spark-cap { font-size: 10px; color: var(--mac-sec); }
-    .svc-actions { display: flex; flex-wrap: wrap; gap: 6px; position: relative; margin-top: 4px; }
-    .snooze-menu {
-      display: none; position: absolute; left: 0; top: 100%;
-      margin-top: 4px; z-index: 2;
-      background: #fff; border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
-      overflow: hidden; min-width: 148px;
-    }
-    .snooze-menu.open { display: flex; flex-direction: column; }
-    .snooze-menu button {
-      appearance: none; border: 0; background: #fff; color: var(--mac-ink);
-      text-align: left; padding: 8px 10px; font-size: 12px;
-    }
-    .snooze-menu button:hover { background: #f2f2f4; }
     .pop-foot {
       display: flex; align-items: center; justify-content: space-between;
       gap: 8px; padding: 8px 10px;
@@ -412,25 +636,13 @@
       background: rgba(255,255,255,0.35);
     }
     .pop-foot-l, .pop-foot-r { display: flex; gap: 4px; }
-    .more-wrap { position: relative; }
-    .more-menu {
-      display: none; position: absolute; right: 0; bottom: 34px;
-      background: #fff; border-radius: 8px; min-width: 120px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.18); overflow: hidden;
-    }
-    .more-menu.open { display: flex; flex-direction: column; }
-    .more-menu button {
-      appearance: none; border: 0; background: #fff; color: var(--mac-ink);
-      text-align: left; padding: 8px 10px; font-size: 12px;
-    }
-    .more-menu button:hover { background: #f2f2f4; }
 
     .util-win {
       position: fixed;
       top: 72px;
       left: 24px;
       width: min(360px, calc(100vw - 32px));
-      z-index: 34;
+      z-index: 40;
       display: none;
       background: rgba(246, 246, 248, 0.94);
       backdrop-filter: blur(28px) saturate(180%);
@@ -444,6 +656,16 @@
     }
     .util-win.open { display: block; }
     .util-win.settings { left: 52px; top: 88px; }
+    .util-win.detail {
+      left: auto;
+      right: 16px;
+      top: 72px;
+      width: min(420px, calc(100vw - 32px));
+      max-height: calc(100vh - 88px);
+      display: none;
+      flex-direction: column;
+    }
+    .util-win.detail.open { display: flex; }
     .win-bar {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 12px 8px;
@@ -453,6 +675,7 @@
     .win-dots { display: flex; gap: 6px; }
     .win-dots i { width: 10px; height: 10px; border-radius: 99px; background: #ddd; }
     .win-body { padding: 12px 14px 14px; display: grid; gap: 10px; }
+    .util-win.detail .win-body { overflow: auto; min-height: 0; }
     .field { display: grid; gap: 4px; }
     .field label { font-size: 11px; color: var(--mac-sec); font-weight: 550; }
     .field input, .field select, .field textarea {
@@ -489,45 +712,113 @@
       gap: 12px; font-size: 13px;
     }
 
-    .g-win {
-      position: fixed;
-      top: 120px;
-      left: 24px;
-      width: min(420px, calc(100vw - 32px));
-      z-index: 33;
-      display: none;
-      background: var(--surface);
-      color: var(--fg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
-      overflow: hidden;
+    .detail-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px;
     }
-    .g-win.open { display: block; }
-    .g-bar {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      font-size: 12px; font-weight: 500;
+    .detail-head h1 {
+      margin: 0 0 4px; font-size: 16px; font-weight: 650; letter-spacing: -0.015em;
     }
-    .g-bar button {
-      appearance: none; border: 0; background: transparent; color: var(--muted);
-      min-height: 32px; padding: 0 8px;
+    .detail-head .reason {
+      margin: 0; color: var(--mac-sec); font-size: 12px;
+      font-family: ui-monospace, Menlo, monospace;
     }
-    .g-bar button:hover { color: var(--fg); }
-    .g-bar button:focus-visible { outline: 2px solid var(--accent); }
-    .g-body { padding: 12px; }
-    .g-chart { width: 100%; height: 88px; color: var(--status-down); }
-    body[data-icon="healthy"] .g-chart { color: var(--accent); }
-    .g-cap { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 8px; }
+    .detail-status { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .kv {
+      display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px;
+      margin: 0; font-size: 12px;
+    }
+    .kv dt { color: var(--mac-sec); }
+    .kv dd {
+      margin: 0; font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, Menlo, monospace; color: var(--mac-ink);
+    }
+    .kv dd.url { color: var(--mac-sec); overflow-wrap: anywhere; }
+    .error-line {
+      margin: 0; color: #9b1c1c; font-size: 12px;
+      font-family: ui-monospace, Menlo, monospace;
+    }
+    .preview {
+      background: #fff; border: 1px solid var(--mac-hair); border-radius: 8px;
+      padding: 8px 10px; font-family: ui-monospace, Menlo, monospace;
+      font-size: 11px; color: var(--mac-sec); white-space: pre-wrap;
+      max-height: 88px; overflow: auto; margin: 0;
+    }
+    .spark-block { display: grid; gap: 4px; }
+    .spark-label { margin: 0; font-size: 11px; color: var(--mac-sec); }
+    .spark-line { display: block; width: 100%; height: 28px; color: var(--mac-ink); }
+    .spark.strip {
+      display: flex; align-items: flex-end; gap: 0; height: 18px; overflow: hidden;
+    }
+    .spark.strip i {
+      flex: 1; min-width: 0; min-height: 3px; border-radius: 1px 1px 0 0;
+      background: var(--status-ok); height: 40%;
+    }
+    .spark.strip i.degraded { background: var(--status-warn); height: 65%; }
+    .spark.strip i.down { background: var(--status-down); height: 100%; }
+    .spark.strip i.gap { background: #d1d1d6; height: 12%; }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .snooze-wrap { position: relative; }
+    .snooze-menu {
+      display: none; position: absolute; left: 0; bottom: calc(100% + 4px);
+      margin: 0; z-index: 2;
+      background: #fff; border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      overflow: hidden; min-width: 180px;
+    }
+    .snooze-menu.open { display: flex; flex-direction: column; }
+    .snooze-menu button {
+      appearance: none; border: 0; background: #fff; color: var(--mac-ink);
+      text-align: left; padding: 8px 10px; font-size: 12px; cursor: pointer;
+    }
+    .snooze-menu button:hover { background: #f2f2f4; }
 
+    .about {
+      position: relative;
+      z-index: 1;
+      padding: 8px 32px 48px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px 32px;
+      max-width: 1100px;
+    }
+    .about > div { min-width: 0; }
+    .about h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      color: var(--muted);
+    }
+    .about p {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--fg);
+    }
+    .inst-label {
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .inst-note {
+      margin: 8px 0 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
     .void {
       position: relative;
       z-index: 1;
-      min-height: 160vh;
-      padding: 48px 24px 72px;
+      min-height: 0;
+      padding: 24px 32px 80px;
       display: flex;
-      align-items: flex-end;
+      align-items: flex-start;
     }
     .instruments {
       display: flex;
@@ -601,22 +892,6 @@
     .check-now:hover { background: oklch(90% 0.01 250); color: var(--bg); }
     .check-now:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-    .endband {
-      position: relative;
-      z-index: 1;
-      padding: 96px 24px 48px;
-      text-align: center;
-    }
-    .endband h1 {
-      font-family: var(--font-display);
-      font-size: clamp(32px, 5vw, 52px);
-      font-weight: 500;
-      line-height: 1.18;
-      letter-spacing: -0.02em;
-      max-width: 16ch;
-      margin: 0 auto;
-      text-wrap: balance;
-    }
     .sys {
       margin-top: 16px;
       font-family: var(--font-mono);
@@ -677,7 +952,31 @@
       font-size: 28px; font-weight: 500;
       margin: 0 0 8px;
     }
-    .sheet p { color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
+    .sheet p { color: var(--muted); font-family: var(--font-mono); font-size: 13px; line-height: 1.45; }
+    .sheet-cmd {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: oklch(14% 0.012 250);
+      color: var(--fg);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      user-select: all;
+      overflow-x: auto;
+    }
+    .sheet-copy-cmd {
+      appearance: none;
+      margin: 8px 0 0;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .sheet-copy-cmd:hover { text-decoration: underline; }
+    .sheet-copy-cmd:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .sheet-actions { display: flex; gap: 8px; margin-top: 20px; }
     .btn-ghost {
       appearance: none;
@@ -721,22 +1020,44 @@
         max-height: calc(100vh - 52px);
       }
       .popover::before { display: none; }
-      .void { min-height: 130vh; padding: 40px 16px 48px; }
-      .util-win, .g-win { left: 12px; right: 12px; width: auto; }
-      .endband { padding: 72px 16px 40px; }
+      .hero {
+        grid-template-columns: minmax(0, 1fr);
+        min-height: auto;
+        padding: 64px 16px 40px;
+        gap: 24px;
+      }
+      .hero-slot { display: none; }
+      .hero h1, .lede { max-width: none; }
+      .field-rings, .ticks, .field-scan { display: none; }
+      .about {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 8px 16px 32px;
+      }
+      .void { padding: 16px 16px 48px; }
+      .util-win, .util-win.detail, .util-win.settings {
+        left: 12px; right: 12px; width: auto;
+      }
     }
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
+      .void-glow, .void-glow-2, .dot-grid, .field-scan, .field-rings i, .ticks i, .hero-mark i, .hero h1, .hero .sys, .hero .lede, .kicker, .chips li, .hero .btn-solid, .popover.open {
         animation: none !important;
-        transition: none !important;
       }
-      .void { min-height: 100vh; }
+      .hero h1, .hero .sys, .hero .lede, .kicker, .chips li, .hero .btn-solid, .hero-mark i {
+        opacity: 1;
+        clip-path: none;
+        transform: none;
+      }
+      .field-scan, .field-rings, .ticks { display: none; }
+      .hero-mark i + i { opacity: 0.38; }
       .instruments, .inst { opacity: 1; pointer-events: auto; transform: none; }
     }
   </style>
 </head>
 <body data-icon="healthy" data-objects="0">
   <div class="void-glow" aria-hidden="true"></div>
+  <div class="void-glow void-glow-2" aria-hidden="true"></div>
+  <div class="dot-grid" aria-hidden="true"></div>
+  <div class="field-scan" aria-hidden="true"></div>
 
   <header class="menubar" data-od-id="menubar">
     <div class="mb-left">
@@ -757,15 +1078,20 @@
     </div>
   </header>
 
-  <button class="os-note js-note" type="button" data-od-id="banner" aria-live="polite">
-    <span class="os-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#f6f6f8"/><rect x="4" y="10" width="12" height="12" rx="2.4" fill="#36a15a"/><rect x="16" y="10" width="12" height="12" rx="2.4" fill="#36a15a" opacity=".38"/></svg></span>
-    <span>
-      <span class="os-app">Pulse</span>
-      <span class="os-title js-note-title">Payments API</span>
-      <span class="os-body js-note-body">HTTP 502 · 1.4s</span>
-    </span>
-    <span class="os-time">now</span>
-  </button>
+  <div class="os-note js-note" data-od-id="banner" role="status" aria-live="polite">
+    <button class="os-close js-note-close" type="button" aria-label="Dismiss">
+      <svg viewBox="0 0 8 8" aria-hidden="true"><path d="M1.2 1.2l5.6 5.6M6.8 1.2L1.2 6.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </button>
+    <button class="os-note-hit js-note-open" type="button">
+      <span class="os-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#f6f6f8"/><rect x="4" y="10" width="12" height="12" rx="2.4" fill="#36a15a"/><rect x="16" y="10" width="12" height="12" rx="2.4" fill="#36a15a" opacity=".38"/></svg></span>
+      <span>
+        <span class="os-app">Pulse</span>
+        <span class="os-title js-note-title">Payments API</span>
+        <span class="os-body js-note-body">HTTP 502 · 1.4s</span>
+      </span>
+      <span class="os-time">now</span>
+    </button>
+  </div>
 
   <div class="popover js-pop" id="popover" data-od-id="popover" role="dialog" aria-label="Pulse">
     <div class="pop-inner">
@@ -787,12 +1113,7 @@
         </div>
         <div class="pop-foot-r">
           <button class="mini js-settings" type="button" data-od-id="open-settings">Settings</button>
-          <div class="more-wrap">
-            <button class="mini js-more" type="button" aria-haspopup="true">•••</button>
-            <div class="more-menu js-more-menu">
-              <button type="button" class="js-quit">Quit Pulse</button>
-            </div>
-          </div>
+          <button class="mini js-quit" type="button">Quit</button>
         </div>
       </div>
     </div>
@@ -843,43 +1164,69 @@
     </div>
   </div>
 
-  <div class="g-win js-grafana" data-od-id="action-panel" role="dialog" aria-label="Grafana">
-    <div class="g-bar">
-      <span>Grafana · <span class="js-g-name">Payments API</span></span>
-      <button type="button" class="js-g-close">Close</button>
+  <div class="util-win detail js-detail-win" data-od-id="detail-window" role="dialog" aria-labelledby="detail-title">
+    <div class="win-bar">
+      <span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span id="detail-title" class="js-detail-title">Service</span>
     </div>
-    <div class="g-body">
-      <svg class="g-chart" viewBox="0 0 360 88" preserveAspectRatio="none" aria-hidden="true">
-        <path d="M0 62 C40 60 70 61 110 58 C150 55 170 22 210 18 C250 14 270 70 310 74 L360 76" fill="none" stroke="currentColor" stroke-width="2" />
-      </svg>
-      <p class="g-cap js-g-cap">pay.internal/v1/healthz · 502</p>
-    </div>
+    <div class="win-body js-detail-body"></div>
   </div>
 
   <main>
+    <section class="hero" data-od-id="hero">
+      <div class="field-rings" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="ticks" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="hero-copy">
+        <div class="hero-mark" aria-hidden="true"><i></i><i></i></div>
+        <p class="kicker">Mac menu bar app</p>
+        <h1>Watch HTTP endpoints you own from the menu bar.</h1>
+        <p class="lede">Pulse sits next to the clock and checks URLs you give it. Green is healthy, red is down. No account. Nothing is sent to us.</p>
+        <ul class="chips">
+          <li>Local only</li>
+          <li>Keychain secrets</li>
+          <li>Down after 3 fails</li>
+        </ul>
+        <button class="btn-solid js-download" type="button" data-od-id="cta-download">Download for Mac</button>
+        <p class="sys">macOS 13+ · Apple silicon · unsigned dmg</p>
+      </div>
+      <div class="hero-slot" aria-hidden="true"></div>
+    </section>
+    <section class="about" data-od-id="about">
+      <div>
+        <h2>What you add</h2>
+        <p>A name, a URL, and how often to check. Optional headers, JSON assertions, and a link to open when it fails. Test the request before you save.</p>
+      </div>
+      <div>
+        <h2>What you see</h2>
+        <p>The menu bar icon. Click it for the list; click a row for last status, latency, and the last 24 checks. Pause or snooze — the icon still tells the truth.</p>
+      </div>
+      <div>
+        <h2>What it is not</h2>
+        <p>Not a team dashboard, not a public status page, not a cloud poller. One Mac, one operator. Pulse only talks to the URLs you typed.</p>
+      </div>
+    </section>
     <section class="void" id="void" data-od-id="void">
       <div class="instruments" data-od-id="instruments">
         <div class="inst" data-od-id="object-assert">
+          <div class="inst-label">Assertion</div>
           <div class="inst-k">$.status equals ok</div>
           <div class="inst-v" id="assert-val">ok</div>
+          <p class="inst-note">HTTP 200 is not enough if the body disagrees.</p>
         </div>
         <div class="inst" data-od-id="object-secret">
+          <div class="inst-label">Secret header</div>
           <div class="inst-k">Authorization</div>
           <div class="secret-row"><span class="secret-val">••••••••</span></div>
-          <p class="never">never in a banner</p>
+          <p class="never">Keychain only — never in a banner or on disk.</p>
         </div>
         <div class="inst" data-od-id="object-recover">
-          <div class="inst-k">Last 4</div>
+          <div class="inst-label">Flap damping</div>
+          <div class="inst-k">Consecutive hard fails</div>
           <div class="stops" id="rec-spark" data-state="ok" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
           <button class="check-now" type="button" data-act="check" data-id="payments">Check now</button>
+          <p class="inst-note">Three in a row is Down. Check now runs one immediately.</p>
         </div>
       </div>
-    </section>
-
-    <section class="endband" data-od-id="end-band">
-      <h1>Quiet until three failures say it’s real.</h1>
-      <p class="sys">macOS 13+ · Apple silicon · nothing leaves the machine</p>
-      <button class="btn-solid js-download" type="button" data-od-id="cta-download">Download for Mac</button>
     </section>
   </main>
 
@@ -891,11 +1238,14 @@
 
   <div class="sheet-back" id="sheet" data-od-id="download-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
     <div class="sheet">
-      <h2 id="sheet-title">Pulse.app.zip</h2>
-      <p id="sheet-copy">Apple silicon · macOS 13 Ventura or later. Unsigned — in Finder, right-click Pulse.app → Open. The first secret check will ask for Keychain: choose Always Allow.</p>
+      <h2 id="sheet-title">Pulse.dmg</h2>
+      <p id="sheet-copy">Apple silicon · macOS 13 Ventura or later. Unsigned (no Apple Developer ID). Source: github.com/praveensankar969/pulse. Drag Pulse.app to Applications, then run:</p>
+      <pre class="sheet-cmd" id="sheet-cmd">xattr -cr /Applications/Pulse.app</pre>
+      <button class="sheet-copy-cmd" type="button" id="sheet-copy-cmd">Copy command</button>
+      <p id="sheet-copy-2">Then open Pulse. First secret: Keychain → Always Allow.</p>
       <div class="sheet-actions">
         <button class="btn-ghost" type="button" id="sheet-close">Cancel</button>
-        <a class="btn-solid" id="sheet-get" href="#">Download Pulse.app.zip</a>
+        <a class="btn-solid" id="sheet-get" href="#">Download Pulse.dmg</a>
       </div>
     </div>
   </div>
@@ -908,24 +1258,24 @@
       var FAV_DOWN = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='10' width='12' height='12' rx='2.4' fill='%23e24b3c'/%3E%3Crect x='16' y='10' width='12' height='12' rx='2.4' fill='%23e24b3c' opacity='.38'/%3E%3C/svg%3E";
 
       var services = [
-        { id: "payments", name: "Payments API", status: "healthy", snoozed: false, reason: "200 · 54ms", age: "4s ago", expected: "2xx · $.status equals ok", actual: "200 · ok", action: "Open Grafana", latency: "54ms", interval: "60s" },
-        { id: "worker", name: "Worker queue", status: "healthy", snoozed: false, reason: "200 · 80ms", age: "12s ago", expected: "2xx", actual: "200", action: "Open logs", latency: "80ms", interval: "30s" },
-        { id: "api", name: "Core API", status: "healthy", snoozed: false, reason: "200 · 48ms", age: "12s ago", expected: "2xx · $.status equals ok", actual: "200 · ok", action: "Open app", latency: "48ms", interval: "30s" },
-        { id: "auth", name: "Auth", status: "healthy", snoozed: false, reason: "200 · 61ms", age: "18s ago", expected: "2xx", actual: "200", action: "Open Grafana", latency: "61ms", interval: "60s" },
-        { id: "web", name: "Web", status: "healthy", snoozed: false, reason: "200 · 92ms", age: "22s ago", expected: "2xx", actual: "200", action: "Open site", latency: "92ms", interval: "60s" },
-        { id: "docs", name: "Docs", status: "healthy", snoozed: false, reason: "200 · 110ms", age: "40s ago", expected: "2xx", actual: "200", action: "Open docs", latency: "110ms", interval: "120s" },
-        { id: "nas", name: "NAS", status: "healthy", snoozed: false, reason: "200 · 31ms", age: "8s ago", expected: "2xx", actual: "200", action: "Open NAS", latency: "31ms", interval: "60s" }
+        { id: "payments", name: "Payments API", status: "healthy", snoozed: false, reason: "200 · 54ms", age: "4s ago", expected: "2xx", actual: "200 · ok", latency: "54ms", interval: "60s", http: "200", url: "https://pay.internal/v1/healthz" },
+        { id: "worker", name: "Worker queue", status: "healthy", snoozed: false, reason: "200 · 80ms", age: "12s ago", expected: "2xx", actual: "200", latency: "80ms", interval: "30s", http: "200", url: "https://worker.internal/health" },
+        { id: "api", name: "Core API", status: "healthy", snoozed: false, reason: "200 · 48ms", age: "12s ago", expected: "2xx", actual: "200 · ok", latency: "48ms", interval: "30s", http: "200", url: "https://api.internal/healthz" },
+        { id: "auth", name: "Auth", status: "healthy", snoozed: false, reason: "200 · 61ms", age: "18s ago", expected: "2xx", actual: "200", latency: "61ms", interval: "60s", http: "200", url: "https://auth.internal/health" },
+        { id: "web", name: "Web", status: "healthy", snoozed: false, reason: "200 · 92ms", age: "22s ago", expected: "2xx", actual: "200", latency: "92ms", interval: "60s", http: "200", url: "https://www.internal/" },
+        { id: "docs", name: "Docs", status: "healthy", snoozed: false, reason: "200 · 110ms", age: "40s ago", expected: "2xx", actual: "200", latency: "110ms", interval: "120s", http: "200", url: "https://docs.internal/" },
+        { id: "nas", name: "NAS", status: "healthy", snoozed: false, reason: "200 · 31ms", age: "8s ago", expected: "2xx", actual: "200", latency: "31ms", interval: "60s", http: "200", url: "https://nas.internal/ping" }
       ];
 
       var state = {
         open: false,
         settings: false,
         add: false,
-        grafana: false,
-        selected: "payments",
+        detail: null,
+        selected: null,
+        editingId: null,
         note: false,
         noteKind: "down",
-        more: false,
         snoozeFor: null,
         tookOver: false,
         introDone: false,
@@ -961,8 +1311,30 @@
         };
       }
 
+      function esc(value) {
+        return String(value == null ? "" : value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function sortedServices() {
+        var rank = { down: 0, degraded: 1, paused: 3, healthy: 4 };
+        return services.slice().sort(function (a, b) {
+          var ra = a.snoozed ? 2 : rank[a.status];
+          var rb = b.snoozed ? 2 : rank[b.status];
+          return (ra - rb) || a.name.localeCompare(b.name);
+        });
+      }
+
+      function ensureSelected() {
+        if (state.selected && findService(state.selected)) return;
+        var first = sortedServices()[0];
+        state.selected = first ? first.id : null;
+      }
+
       function spillFor(s) {
-        if (s.snoozed) return { cls: "spill spill-mute", label: "Snoozed" };
         if (s.status === "down") return { cls: "spill spill-down", label: "Down" };
         if (s.status === "degraded") return { cls: "spill spill-warn", label: "Degraded" };
         if (s.status === "paused") return { cls: "spill spill-mute", label: "Paused" };
@@ -989,57 +1361,96 @@
           var y = h - (v / 36) * (h - 2) - 1;
           return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
         }).join(" ");
-        return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        return '<svg class="spark-line" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      }
+
+      function stripHtml(status) {
+        var cells = [];
+        var i;
+        for (i = 0; i < 48; i++) {
+          var cls = "healthy";
+          if (status === "down" && i > 40) cls = "down";
+          else if (status === "degraded" && i > 36 && i % 3 === 0) cls = "degraded";
+          else if (i < 3) cls = "gap";
+          cells.push('<i class="' + cls + '"></i>');
+        }
+        return '<div class="spark strip" aria-hidden="true">' + cells.join("") + "</div>";
       }
 
       function renderList(root) {
-        var rank = { down: 0, degraded: 1, paused: 3, healthy: 4 };
-        var rows = services.slice().sort(function (a, b) {
-          var ra = a.snoozed ? 2 : rank[a.status];
-          var rb = b.snoozed ? 2 : rank[b.status];
-          return (ra - rb) || a.name.localeCompare(b.name);
-        });
+        var rows = sortedServices();
         root.innerHTML = rows.map(function (s) {
           var selected = state.selected === s.id;
           var dot = s.status === "down" ? "down" : s.status === "degraded" ? "warn" : (s.status === "paused") ? "mute" : "";
           var pill = spillFor(s);
-          var snoozeOpen = state.snoozeFor === s.id ? " open" : "";
+          var snooze = s.snoozed
+            ? '<span class="spill spill-mute">' + esc(s.snoozeLabel || "Snoozed · 15m") + "</span>"
+            : "";
           return (
             '<div class="svc" data-id="' + s.id + '" data-od-id="svc-' + s.id + '" data-state="' + s.status + '" aria-selected="' + selected + '">' +
               '<button class="svc-row" type="button" data-select="' + s.id + '">' +
                 '<span class="dot ' + dot + '" aria-hidden="true"></span>' +
-                '<span><span class="svc-name">' + s.name + '</span><div class="svc-meta">' + s.reason + '</div></span>' +
-                '<span class="svc-right">' +
-                  '<span class="svc-static"><span class="' + pill.cls + '">' + pill.label + '</span><div class="svc-age">' + s.age + '</div></span>' +
-                  '<span class="svc-hover">' +
-                    '<span class="ghost-mini" data-act="open" data-id="' + s.id + '">Open</span>' +
-                    '<span class="ghost-mini" data-act="check" data-id="' + s.id + '">Check</span>' +
-                  '</span>' +
-                '</span>' +
-              '</button>' +
-              (selected ? (
-                '<div class="svc-detail">' +
-                  '<div class="ev"><span>Expected</span><b>' + s.expected + '</b></div>' +
-                  '<div class="ev"><span>Actual</span><b>' + s.actual + '</b></div>' +
-                  '<div class="ev"><span>Latency</span><b>' + s.latency + ' · ' + s.interval + '</b></div>' +
-                  sparkSvg(s.status) +
-                  '<div class="spark-cap">Last 24 checks</div>' +
-                  '<div class="svc-actions">' +
-                    '<button class="mini primary" type="button" data-act="open" data-id="' + s.id + '">' + s.action + '</button>' +
-                    '<button class="mini" type="button" data-act="check" data-id="' + s.id + '">Check now</button>' +
-                    '<button class="mini" type="button" data-act="snooze-toggle" data-id="' + s.id + '">Snooze</button>' +
-                    '<button class="mini" type="button" data-act="pause" data-id="' + s.id + '">' + (s.status === "paused" ? "Resume" : "Pause") + '</button>' +
-                    '<div class="snooze-menu' + snoozeOpen + '">' +
-                      '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="15m">15 minutes</button>' +
-                      '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="1h">1 hour</button>' +
-                      '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="tomorrow">Until tomorrow</button>' +
-                    '</div>' +
-                  '</div>' +
-                '</div>'
-              ) : '') +
-            '</div>'
+                '<span class="svc-main"><span class="svc-name">' + esc(s.name) + '</span><span class="svc-meta">' + esc(s.age) + snooze + "</span></span>" +
+                '<span class="' + pill.cls + '">' + pill.label + "</span>" +
+              "</button>" +
+            "</div>"
           );
         }).join("");
+      }
+
+      function renderDetail() {
+        var win = document.querySelector(".js-detail-win");
+        var body = document.querySelector(".js-detail-body");
+        var title = document.querySelector(".js-detail-title");
+        var s = state.detail ? findService(state.detail) : null;
+        if (win) win.classList.toggle("open", !!s);
+        if (!body) return;
+        if (!s) {
+          body.innerHTML = "";
+          return;
+        }
+        if (title) title.textContent = s.name;
+        var pill = spillFor(s);
+        var snoozeOpen = state.snoozeFor === s.id ? " open" : "";
+        var preview = s.status === "down" ? '<pre class="preview">(empty)</pre>' : "";
+        var snoozePill = s.snoozed
+          ? '<span class="spill spill-mute">' + esc(s.snoozeLabel || "Snoozed · 15m") + "</span>"
+          : "";
+        body.innerHTML =
+          '<div class="detail-head">' +
+            "<div><h1>" + esc(s.name) + '</h1><p class="reason">' + esc(s.reason) + "</p></div>" +
+            '<div class="detail-status"><span class="dot ' + (s.status === "down" ? "down" : s.status === "degraded" ? "warn" : s.status === "paused" ? "mute" : "") + '"></span>' +
+              '<span class="' + pill.cls + '">' + pill.label + "</span>" +
+              snoozePill +
+            "</div>" +
+          "</div>" +
+          '<dl class="kv">' +
+            "<dt>HTTP</dt><dd>" + esc(s.http) + "</dd>" +
+            "<dt>Latency</dt><dd>" + esc(s.latency) + "</dd>" +
+            "<dt>Expected</dt><dd>" + esc(s.expected) + "</dd>" +
+            "<dt>Checked</dt><dd>" + esc(s.age) + "</dd>" +
+            '<dt>URL</dt><dd class="url">' + esc(s.url) + "</dd>" +
+          "</dl>" +
+          preview +
+          '<div class="spark-block">' +
+            '<p class="spark-label">Last 24 checks</p>' + sparkSvg(s.status) +
+            '<p class="spark-label">Last 24 hours</p>' + stripHtml(s.status) +
+          "</div>" +
+          '<div class="actions">' +
+            '<button class="mini primary" type="button" data-act="open" data-id="' + s.id + '">Open</button>' +
+            '<button class="mini" type="button" data-act="check" data-id="' + s.id + '">Check now</button>' +
+            '<button class="mini" type="button" data-act="pause" data-id="' + s.id + '">' + (s.status === "paused" ? "Resume" : "Pause") + "</button>" +
+            '<div class="snooze-wrap">' +
+              '<button class="mini" type="button" data-act="snooze-toggle" data-id="' + s.id + '">Snooze ▾</button>' +
+              '<div class="snooze-menu' + snoozeOpen + '">' +
+                '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="15m">15 minutes</button>' +
+                '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="60m">60 minutes</button>' +
+                '<button type="button" data-act="snooze" data-id="' + s.id + '" data-for="tomorrow">Until tomorrow 08:00</button>' +
+                (s.snoozed ? '<button type="button" data-act="snooze-clear" data-id="' + s.id + '">Clear snooze</button>' : "") +
+              "</div>" +
+            "</div>" +
+            '<button class="mini" type="button" data-act="edit" data-id="' + s.id + '">Edit</button>' +
+          "</div>";
       }
 
       function showToast(msg) {
@@ -1068,8 +1479,6 @@
         }
         var spark = document.getElementById("rec-spark");
         if (spark) spark.setAttribute("data-state", pay && pay.status === "down" ? "down" : "ok");
-        var gcap = document.querySelector(".js-g-cap");
-        if (gcap) gcap.textContent = pay && pay.status === "down" ? "pay.internal/v1/healthz · 502" : "pay.internal/v1/healthz · 200";
       }
 
       function render() {
@@ -1078,12 +1487,10 @@
         var note = document.querySelector(".js-note");
         var settings = document.querySelector(".js-settings-win");
         var addWin = document.querySelector(".js-add-win");
-        var gWin = document.querySelector(".js-grafana");
         var trays = document.querySelectorAll(".js-tray");
         var countEl = document.querySelector(".js-pop-count");
         var sumEl = document.querySelector(".js-pop-sum");
         var list = document.querySelector(".js-list");
-        var more = document.querySelector(".js-more-menu");
         if (pop) pop.classList.toggle("open", state.open);
         trays.forEach(function (t) {
           t.setAttribute("aria-expanded", state.open ? "true" : "false");
@@ -1098,8 +1505,7 @@
         }
         if (settings) settings.classList.toggle("open", state.settings);
         if (addWin) addWin.classList.toggle("open", state.add);
-        if (gWin) gWin.classList.toggle("open", state.grafana);
-        if (more) more.classList.toggle("open", state.more);
+        renderDetail();
         if (countEl) {
           if (c.down) { countEl.className = "js-pop-count spill spill-down"; countEl.textContent = c.down + " down"; }
           else if (c.degraded) { countEl.className = "js-pop-count spill spill-warn"; countEl.textContent = c.degraded + " degraded"; }
@@ -1136,20 +1542,21 @@
         if (n >= 1) {
           services[1].status = "degraded";
           services[1].reason = "timeout · 10.0s";
-          services[1].age = "1 miss";
+          services[1].age = "degraded 01m";
           services[1].latency = "10.0s";
           services[1].actual = "timeout";
+          services[1].http = "—";
         }
         if (n >= 2) {
           services[0].status = "down";
           services[0].reason = "HTTP 502 · 1.4s";
-          services[0].age = "6m";
+          services[0].age = "down 06m";
           services[0].actual = "502 · body empty";
           services[0].latency = "1.4s";
+          services[0].http = "502";
           state.note = true;
           state.noteKind = "down";
-          state.open = true;
-          state.selected = "payments";
+          if (isDesktop() && !state.tookOver) state.open = true;
         }
         if (n >= 3) state.objects = true;
         state.film = Math.max(state.film, n);
@@ -1160,16 +1567,22 @@
         var svc = findService(id);
         if (kind === "pause" && svc) {
           svc.status = svc.status === "paused" ? "healthy" : "paused";
-          svc.reason = svc.status === "paused" ? "polling off" : "200 · 54ms";
+          svc.reason = svc.status === "paused" ? "Paused" : "200 · 54ms";
           svc.age = "just now";
           svc.latency = svc.status === "paused" ? "—" : "54ms";
+          svc.http = svc.status === "paused" ? "—" : "200";
           if (svc.status === "healthy") svc.actual = "200 · ok";
         }
         if (kind === "snooze-toggle") state.snoozeFor = state.snoozeFor === id ? null : id;
         if (kind === "snooze" && svc) {
           svc.snoozed = true;
-          svc.age = extra || "15m";
+          svc.snoozeLabel = extra === "60m" ? "Snoozed · 60m" : extra === "tomorrow" ? "Snoozed · 14h" : "Snoozed · 15m";
           state.note = false;
+          state.snoozeFor = null;
+        }
+        if (kind === "snooze-clear" && svc) {
+          svc.snoozed = false;
+          svc.snoozeLabel = null;
           state.snoozeFor = null;
         }
         if (kind === "check" && svc) {
@@ -1179,6 +1592,7 @@
             svc.reason = "200 · 47ms";
             svc.actual = "200 · ok";
             svc.latency = "47ms";
+            svc.http = "200";
             svc.snoozed = false;
             state.note = true;
             state.noteKind = "up";
@@ -1187,29 +1601,64 @@
           }
         }
         if (kind === "open" && svc) {
-          state.grafana = true;
-          state.note = false;
-          var nameEl = document.querySelector(".js-g-name");
-          if (nameEl) nameEl.textContent = svc.name;
+          showToast("Opened " + svc.name);
+        }
+        if (kind === "edit" && svc) {
+          state.detail = null;
+          state.add = true;
+          state.editingId = svc.id;
+          state.settings = false;
+          state.open = false;
+          var titleEl = document.getElementById("add-title");
+          var nameField = document.getElementById("add-name");
+          var urlField = document.getElementById("add-url");
+          var assertField = document.getElementById("add-assert");
+          if (titleEl) titleEl.textContent = "Edit " + svc.name;
+          if (nameField) nameField.value = svc.name;
+          if (urlField) urlField.value = svc.url;
+          if (assertField) assertField.value = svc.expected;
         }
       }
 
       document.addEventListener("click", function (e) {
+        var dots = e.target.closest(".win-dots");
+        if (dots) {
+          var host = dots.closest(".util-win");
+          if (host && host.classList.contains("js-detail-win")) state.detail = null;
+          else if (host && host.classList.contains("js-settings-win")) state.settings = false;
+          else if (host && host.classList.contains("js-add-win")) state.add = false;
+          render();
+          return;
+        }
         var tray = e.target.closest(".js-tray");
         if (tray) {
           takeOver();
           state.open = !state.open;
-          state.more = false;
           state.snoozeFor = null;
+          if (state.open) {
+            state.detail = null;
+            state.settings = false;
+            state.add = false;
+            ensureSelected();
+          }
           render();
           return;
         }
-        var note = e.target.closest(".js-note");
+        if (e.target.closest(".js-note-close")) {
+          takeOver();
+          state.note = false;
+          render();
+          return;
+        }
+        var note = e.target.closest(".js-note-open") || e.target.closest(".js-note");
         if (note) {
           takeOver();
           state.open = true;
           state.note = true;
-          state.selected = "payments";
+          state.detail = null;
+          state.settings = false;
+          state.add = false;
+          ensureSelected();
           render();
           return;
         }
@@ -1225,7 +1674,10 @@
         if (row && row.closest(".js-list")) {
           takeOver();
           state.selected = row.getAttribute("data-select");
-          state.open = true;
+          state.detail = state.selected;
+          state.open = false;
+          state.settings = false;
+          state.add = false;
           state.snoozeFor = null;
           render();
           return;
@@ -1241,21 +1693,38 @@
           takeOver();
           state.add = !state.add;
           state.settings = false;
-          state.open = true;
+          state.detail = null;
+          state.open = false;
+          state.editingId = null;
+          var addTitle = document.getElementById("add-title");
+          if (state.add && addTitle) addTitle.textContent = "Add service";
           render();
           return;
         }
-        if (e.target.closest(".js-add-cancel")) { state.add = false; render(); return; }
+        if (e.target.closest(".js-add-cancel")) { state.add = false; state.editingId = null; render(); return; }
         if (e.target.closest(".js-add-save")) {
           takeOver();
           var nameEl = document.getElementById("add-name");
+          var urlEl = document.getElementById("add-url");
           var assertEl = document.getElementById("add-assert");
           var name = (nameEl && nameEl.value.trim()) || "Billing API";
-          var id = "svc-" + Date.now();
-          services.push({ id: id, name: name, status: "healthy", snoozed: false, reason: "200 · 41ms", age: "just now", expected: (assertEl && assertEl.value) || "2xx", actual: "200 · ok", action: "Open app", latency: "41ms", interval: "60s" });
+          var url = (urlEl && urlEl.value) || "https://example.internal/healthz";
+          var expected = (assertEl && assertEl.value) || "2xx";
+          var existing = state.editingId ? findService(state.editingId) : null;
+          if (existing) {
+            existing.name = name;
+            existing.url = url;
+            existing.expected = expected;
+            state.selected = existing.id;
+            showToast("Saved " + name);
+          } else {
+            var id = "svc-" + Date.now();
+            services.push({ id: id, name: name, status: "healthy", snoozed: false, reason: "200 · 41ms", age: "just now", expected: expected, actual: "200 · ok", latency: "41ms", interval: "60s", http: "200", url: url });
+            state.selected = id;
+            showToast("Polling " + name);
+          }
           state.add = false;
-          state.selected = id;
-          showToast("Polling " + name);
+          state.editingId = null;
           render();
           return;
         }
@@ -1263,33 +1732,31 @@
           takeOver();
           state.settings = !state.settings;
           state.add = false;
-          state.open = true;
-          state.more = false;
+          state.detail = null;
+          state.open = false;
           render();
           return;
         }
-        if (e.target.closest(".js-more")) { takeOver(); state.more = !state.more; render(); return; }
         if (e.target.closest(".js-quit")) {
           takeOver();
-          state.open = false; state.settings = false; state.add = false; state.more = false; state.grafana = false;
+          state.open = false; state.settings = false; state.add = false; state.detail = null;
           render();
           return;
         }
-        if (e.target.closest(".js-g-close")) { state.grafana = false; render(); return; }
         if (e.target.closest(".js-switch")) {
           var sw = e.target.closest(".js-switch");
           sw.classList.toggle("off");
           sw.setAttribute("aria-pressed", sw.classList.contains("off") ? "false" : "true");
           return;
         }
-        if (e.target.closest(".popover") || e.target.closest(".util-win") || e.target.closest(".os-note") || e.target.closest(".g-win") || e.target.closest(".sheet") || e.target.closest(".js-download")) return;
-        if (state.open || state.settings || state.add || state.grafana) {
+        if (e.target.closest(".popover") || e.target.closest(".util-win") || e.target.closest(".os-note") || e.target.closest(".sheet") || e.target.closest(".js-download")) return;
+        if (state.open || state.settings || state.add || state.detail) {
           if (!e.target.closest(".menubar")) {
+            takeOver();
             state.open = false;
             state.settings = false;
             state.add = false;
-            state.more = false;
-            state.grafana = false;
+            state.detail = null;
             state.snoozeFor = null;
             render();
           }
@@ -1300,20 +1767,18 @@
       var sheetGet = document.getElementById("sheet-get");
       var sheetTitle = document.getElementById("sheet-title");
       var sheetCopy = document.getElementById("sheet-copy");
-      var GH = (document.querySelector('meta[name="pulse-github"]') || {}).content || "pulsebar/pulse";
-      var downloadUrl = "https://github.com/" + GH + "/releases/latest/download/Pulse.app.zip";
+      var GH = (document.querySelector('meta[name="pulse-github"]') || {}).content || "praveensankar969/pulse";
+      var downloadUrl = "https://github.com/" + GH + "/releases/latest/download/Pulse_0.1.0_aarch64.dmg";
       sheetGet.href = downloadUrl;
       fetch("https://api.github.com/repos/" + GH + "/releases/latest")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (rel) {
           if (!rel || !rel.assets) return;
-          var asset = rel.assets.find(function (a) {
-            return /\.(zip|dmg)$/i.test(a.name);
-          });
+          var asset = rel.assets.find(function (a) { return /\.dmg$/i.test(a.name); });
           if (!asset) {
-            sheetCopy.textContent = "Apple silicon · macOS 13+. No build is attached to the latest release yet.";
-            sheetGet.removeAttribute("href");
-            sheetGet.setAttribute("aria-disabled", "true");
+            sheetCopy.textContent = "Apple silicon · macOS 13+. Unsigned. Source: github.com/" + GH + ". No DMG is attached to the latest GitHub release yet — upload Pulse_0.1.0_aarch64.dmg to the release, then refresh.";
+            sheetGet.href = "https://github.com/" + GH + "/releases/latest";
+            sheetGet.textContent = "Open GitHub Releases";
             return;
           }
           downloadUrl = asset.browser_download_url;
@@ -1322,6 +1787,19 @@
           sheetGet.textContent = "Download " + asset.name;
         })
         .catch(function () {});
+      var sheetCopyCmd = document.getElementById("sheet-copy-cmd");
+      if (sheetCopyCmd) {
+        sheetCopyCmd.addEventListener("click", function () {
+          var cmd = (document.getElementById("sheet-cmd") || {}).textContent || "xattr -cr /Applications/Pulse.app";
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(cmd).then(function () {
+              sheetCopyCmd.textContent = "Copied";
+              window.setTimeout(function () { sheetCopyCmd.textContent = "Copy command"; }, 1600);
+              showToast("Command copied");
+            }).catch(function () {});
+          }
+        });
+      }
       function openSheet() {
         takeOver();
         sheet.hidden = false;
@@ -1343,16 +1821,18 @@
         if (e.key === "Escape") {
           if (sheet.classList.contains("open")) { closeSheet(); return; }
           if (state.snoozeFor) { state.snoozeFor = null; render(); return; }
-          if (state.more) { state.more = false; render(); return; }
           if (state.add) { state.add = false; render(); return; }
           if (state.settings) { state.settings = false; render(); return; }
-          if (state.grafana) { state.grafana = false; render(); return; }
+          if (state.detail) { state.detail = null; render(); return; }
           state.open = false;
           render();
         }
-        if ((e.key === "r" || e.key === "R") && state.open && state.selected) {
-          applyAct("check", state.selected);
-          render();
+        if ((e.key === "r" || e.key === "R") && state.open) {
+          ensureSelected();
+          if (state.selected) {
+            applyAct("check", state.selected);
+            render();
+          }
         }
       });
 
@@ -1391,29 +1871,33 @@
         });
       });
 
+      function isDesktop() {
+        return window.matchMedia("(min-width: 921px)").matches;
+      }
+
       function playIntro() {
         if (state.introDone || state.tookOver) return;
         state.introDone = true;
         if (reduce) {
-          applyBeat(3);
+          if (isDesktop()) {
+            state.open = true;
+            ensureSelected();
+          }
+          state.objects = true;
+          render();
           return;
         }
         render();
-        later(4000, function () { if (!state.tookOver) applyBeat(1); });
-        later(8000, function () { if (!state.tookOver) applyBeat(2); });
-        later(9200, function () { if (!state.tookOver) applyBeat(3); });
+        later(900, function () {
+          if (state.tookOver || !isDesktop()) return;
+          state.open = true;
+          ensureSelected();
+          render();
+        });
+        later(2400, function () { if (!state.tookOver) applyBeat(1); });
+        later(4000, function () { if (!state.tookOver) applyBeat(2); });
+        later(5200, function () { if (!state.tookOver) applyBeat(3); });
       }
-
-      window.addEventListener("scroll", function () {
-        if (state.tookOver) return;
-        var voidEl = document.getElementById("void");
-        if (!voidEl) return;
-        var max = Math.max(voidEl.offsetHeight - window.innerHeight, 1);
-        var p = Math.min(1, Math.max(0, window.scrollY / max));
-        if (p > 0.72) applyBeat(3);
-        else if (p > 0.38) applyBeat(2);
-        else if (p > 0.16) applyBeat(1);
-      }, { passive: true });
 
       playIntro();
       render();

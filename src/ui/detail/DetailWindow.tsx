@@ -162,11 +162,7 @@ export function DetailWindow() {
         }}
       />
 
-      <Sparkline
-        sparkline24={view.sparkline24}
-        samples24h={detail?.samples24h ?? []}
-        now={now}
-      />
+      <Sparkline samples24h={detail?.samples24h ?? []} now={now} />
 
       <div className="actions">
         <button

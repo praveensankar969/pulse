@@ -105,6 +105,9 @@ pub fn run() {
                 handle_activation(app.handle(), &args);
             }
             crate::platform::autostart::install(app.handle(), &settings);
+            if settings.notifications {
+                crate::notify::request_permission_on_notify_save(app.handle());
+            }
             Ok(())
         })
         .on_window_event(ipc::windows::on_window_event)

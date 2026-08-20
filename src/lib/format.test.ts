@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   isSlow,
+  last24Samples,
   primaryLabel,
   relativeTime,
   snoozeRemaining,
   sortServices,
+  sparklinePath,
 } from "./format";
-import type { CheckResult, ServiceView, UiState } from "./types";
+import type { CheckResult, CompactSample, ServiceView, UiState } from "./types";
 
 const NOW = Date.parse("2026-08-18T14:10:00Z");
 
@@ -167,5 +169,80 @@ describe("sortServices", () => {
       "api",
       "Web",
     ]);
+  });
+});
+
+function sample(
+  at: string,
+  patch: Partial<CompactSample> = {},
+): CompactSample {
+  return {
+    at,
+    state: "healthy",
+    outcome: "ok",
+    latencyMs: 50,
+    ...patch,
+  };
+}
+
+describe("sparklinePath", () => {
+  it("returns empty when nothing has latency", () => {
+    expect(sparklinePath([])).toBe("");
+    expect(
+      sparklinePath([sample("2026-08-18T14:00:00Z", { latencyMs: undefined })]),
+    ).toBe("");
+  });
+
+  it("keeps the last 24 samples in time order", () => {
+    const rows = Array.from({ length: 30 }, (_, i) =>
+      sample(`2026-08-18T13:${String(i).padStart(2, "0")}:00Z`, {
+        latencyMs: i,
+      }),
+    );
+    const last = last24Samples(rows);
+    expect(last).toHaveLength(24);
+    expect(last[0]?.at).toBe("2026-08-18T13:06:00Z");
+    expect(last[23]?.at).toBe("2026-08-18T13:29:00Z");
+  });
+
+  it("breaks the path on a missing latency", () => {
+    const d = sparklinePath(
+      [
+        sample("2026-08-18T14:00:00Z", { latencyMs: 40 }),
+        sample("2026-08-18T14:01:00Z", { latencyMs: undefined }),
+        sample("2026-08-18T14:02:00Z", { latencyMs: 80 }),
+      ],
+      23,
+      28,
+    );
+    expect(d.startsWith("M")).toBe(true);
+    expect(d.includes("M") && d.indexOf("M") !== d.lastIndexOf("M")).toBe(true);
+    expect(d.includes("L")).toBe(false);
+  });
+
+  it("drops invalid timestamps and treats 0ms as a real point", () => {
+    const last = last24Samples([
+      sample("not-a-date", { latencyMs: 99 }),
+      sample("2026-08-18T14:00:00Z", { latencyMs: 0 }),
+    ]);
+    expect(last).toHaveLength(1);
+    expect(last[0]?.latencyMs).toBe(0);
+    const d = sparklinePath(last, 220, 28);
+    expect(d.startsWith("M")).toBe(true);
+    expect(d.includes("L")).toBe(false);
+  });
+
+  it("leaves headroom so max latency is not on the ceiling", () => {
+    const d = sparklinePath(
+      [
+        sample("2026-08-18T14:00:00Z", { latencyMs: 40 }),
+        sample("2026-08-18T14:01:00Z", { latencyMs: 80 }),
+      ],
+      23,
+      28,
+    );
+    const ys = [...d.matchAll(/,([\d.]+)/g)].map((match) => Number(match[1]));
+    expect(ys).toHaveLength(2);
+    expect(Math.min(...ys)).toBeGreaterThan(1);
   });
 });

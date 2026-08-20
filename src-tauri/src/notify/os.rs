@@ -19,6 +19,7 @@ use crate::notify::{Notification, Notifier};
 use crate::platform::tray;
 
 /// Default banner / toast sound. OS may ignore this (Focus Assist, etc.).
+#[cfg(not(target_os = "macos"))]
 const DEFAULT_SOUND: &str = "default";
 
 /// Launch arg honored on an installed Windows build (`pulse:focus?id=`).
@@ -162,17 +163,34 @@ pub fn request_permission_on_notify_save<R: Runtime>(app: &AppHandle<R>) {
     #[cfg(target_os = "macos")]
     {
         let app = app.clone();
-        let _ = app.run_on_main_thread(request_macos_authorization);
+        let bundle = app.config().identifier.clone();
+        let posted = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            crate::notify::macos::install_delegate();
+            request_macos_authorization(posted, bundle);
+        });
     }
 }
 
 #[cfg(target_os = "macos")]
-fn request_macos_authorization() {
+fn request_macos_authorization<R: Runtime>(app: AppHandle<R>, bundle_id: String) {
     use block2::RcBlock;
     use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
 
+    crate::ipc::windows::become_regular(&app);
     let center = UNUserNotificationCenter::currentNotificationCenter();
-    let block = RcBlock::new(|_granted, _error| {});
+    let block = RcBlock::new(move |granted: objc2::runtime::Bool, _error: *mut objc2_foundation::NSError| {
+        if granted.as_bool() {
+            tracing::info!(event = "notify_auth", "notification permission granted");
+        } else {
+            tracing::warn!(
+                event = "notify_auth",
+                "notification permission denied — banners will not appear"
+            );
+            crate::notify::macos::open_system_notification_settings(&bundle_id);
+        }
+        crate::ipc::windows::restore_accessory_if_idle(&app);
+    });
     center.requestAuthorizationWithOptions_completionHandler(
         UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
         &block,
@@ -186,6 +204,14 @@ pub struct OsNotifier<R: Runtime> {
 
 impl<R: Runtime> OsNotifier<R> {
     pub fn new(app: AppHandle<R>, hub: NotifyHub) -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            let app_click = app.clone();
+            let hub_click = hub.clone();
+            crate::notify::macos::set_on_click(std::sync::Arc::new(move || {
+                handle_toast_click(&app_click, hub_click.last_id());
+            }));
+        }
         Self { app, hub }
     }
 
@@ -206,18 +232,32 @@ impl<R: Runtime> Notifier for OsNotifier<R> {
         };
         tracing::info!(event = "notify", kind, "os toast");
 
-        let identifier = self.app.config().identifier.clone();
         let sound = self.sound_enabled();
-        let app = self.app.clone();
-        let hub = self.hub.clone();
-        // Plugin show() drops the handle. One notify-rust toast + wait_for_response.
-        tauri::async_runtime::spawn_blocking(move || {
-            deliver_toast(&identifier, &title, &body, sound, &app, &hub);
-        });
+        #[cfg(target_os = "macos")]
+        {
+            let app = self.app.clone();
+            if let Err(error) = app.run_on_main_thread(move || {
+                crate::notify::macos::post(&title, &body, sound);
+            }) {
+                tracing::error!(error = %error, "could not post toast on main thread");
+            }
+            return;
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let identifier = self.app.config().identifier.clone();
+            let app = self.app.clone();
+            let hub = self.hub.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                deliver_toast(&identifier, &title, &body, sound, &app, &hub);
+            });
+        }
     }
 }
 
 /// Same notify-rust path as the plugin's desktop `show`, plus a click wait.
+#[cfg(not(target_os = "macos"))]
 fn deliver_toast<R: Runtime>(
     identifier: &str,
     title: &str,
@@ -239,11 +279,13 @@ fn deliver_toast<R: Runtime>(
 }
 
 /// Owned handler — closures fail the HRTB on `FnOnce(&NotificationResponse)`.
+#[cfg(not(target_os = "macos"))]
 struct ToastClick<R: Runtime> {
     app: AppHandle<R>,
     hub: NotifyHub,
 }
 
+#[cfg(not(target_os = "macos"))]
 impl<R: Runtime> notify_rust::ResponseHandler for ToastClick<R> {
     fn call(self, response: &notify_rust::NotificationResponse) {
         if is_click_response(response) {
@@ -252,6 +294,7 @@ impl<R: Runtime> notify_rust::ResponseHandler for ToastClick<R> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn build_native(
     identifier: &str,
     title: &str,
@@ -271,6 +314,7 @@ fn build_native(
     notification
 }
 
+#[cfg(not(target_os = "macos"))]
 fn prepare_native_app(identifier: &str) {
     #[cfg(target_os = "macos")]
     {
