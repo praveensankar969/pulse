@@ -977,18 +977,30 @@
     }
     .sheet-copy-cmd:hover { text-decoration: underline; }
     .sheet-copy-cmd:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .sheet-actions { display: flex; gap: 8px; margin-top: 20px; }
+    .sheet-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+    }
     .btn-ghost {
       appearance: none;
+      flex: 0 0 auto;
       border: 1px solid var(--border);
       background: transparent;
       color: var(--fg);
       min-height: 44px; padding: 0 16px;
       border-radius: 999px;
+      white-space: nowrap;
     }
     .btn-ghost:hover { background: color-mix(in oklch, var(--fg) 8%, transparent); color: var(--fg); }
     .btn-ghost:focus-visible, .sheet .btn-solid:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .sheet .btn-solid { margin-top: 0; }
+    .sheet .btn-solid {
+      margin-top: 0;
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+    }
     a.btn-solid { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
     .pagefoot a { color: var(--muted); text-decoration: none; }
     .pagefoot a:hover { color: var(--fg); }
@@ -1245,7 +1257,7 @@
       <p id="sheet-copy-2">Then open Pulse. First secret: Keychain → Always Allow.</p>
       <div class="sheet-actions">
         <button class="btn-ghost" type="button" id="sheet-close">Cancel</button>
-        <a class="btn-solid" id="sheet-get" href="#">Download Pulse.dmg</a>
+        <a class="btn-solid" id="sheet-get" href="#">Download</a>
       </div>
     </div>
   </div>
@@ -1778,13 +1790,13 @@
           if (!asset) {
             sheetCopy.textContent = "Apple silicon · macOS 13+. Unsigned. Source: github.com/" + GH + ". No DMG is attached to the latest GitHub release yet — upload Pulse_0.1.0_aarch64.dmg to the release, then refresh.";
             sheetGet.href = "https://github.com/" + GH + "/releases/latest";
-            sheetGet.textContent = "Open GitHub Releases";
+            sheetGet.textContent = "Open Releases";
             return;
           }
           downloadUrl = asset.browser_download_url;
           sheetGet.href = downloadUrl;
           sheetTitle.textContent = asset.name;
-          sheetGet.textContent = "Download " + asset.name;
+          sheetGet.textContent = "Download";
         })
         .catch(function () {});
       var sheetCopyCmd = document.getElementById("sheet-copy-cmd");
